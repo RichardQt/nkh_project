@@ -22,8 +22,8 @@ import type {
 } from '@ant-design/x';
 import { XMarkdown } from '@ant-design/x-markdown';
 import { Button, Typography } from 'antd';
-import { motion, useReducedMotion } from 'motion/react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useReducedMotion } from 'motion/react';
+import { useLocation, useParams } from 'react-router-dom';
 import AgentGlyph from '../../components/AgentGlyph/AgentGlyph';
 import { getAgent } from '../../data/agents';
 import {
@@ -35,6 +35,21 @@ import styles from './ChatPage.module.css';
 
 interface ChatLocationState {
   initialQuestion?: string;
+}
+
+function readEntryQuestion(search: string, state: unknown): string {
+  const fromState =
+    state && typeof state === 'object'
+      ? String(
+          (state as ChatLocationState).initialQuestion ?? '',
+        ).trim()
+      : '';
+  const fromQuery = new URLSearchParams(search).get('q')?.trim() ?? '';
+  return fromState || fromQuery;
+}
+
+function pendingStorageKey(agentKey: string) {
+  return `nkh:pending-question:${agentKey}`;
 }
 
 function createThoughtItems(
@@ -68,7 +83,6 @@ export default function ChatPage() {
   const { agentKey } = useParams();
   const agent = getAgent(agentKey);
   const location = useLocation();
-  const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const [value, setValue] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
@@ -84,15 +98,33 @@ export default function ChatPage() {
   const requestRef = useRef<ChatStreamController | null>(null);
   const bubbleListRef = useRef<ComponentRef<typeof Bubble.List>>(null);
   const activeAnswerRef = useRef<string | null>(null);
+  const isRequestingRef = useRef(false);
   const messageSequenceRef = useRef(0);
-  const initialRequestHandledRef = useRef(false);
   const shouldFollowOutputRef = useRef(true);
   const previousMessageCountRef = useRef(messages.length);
   const smoothScrollLockUntilRef = useRef(0);
+  const autoStartedRef = useRef(false);
+  // Capture entry question on first render of this mount (before any cleanup).
+  const entryQuestionRef = useRef<string | null>(null);
+  if (entryQuestionRef.current === null) {
+    const fromRoute = readEntryQuestion(location.search, location.state);
+    const fromStorage =
+      sessionStorage.getItem(pendingStorageKey(agent.key))?.trim() ?? '';
+    const question = fromRoute || fromStorage;
+    entryQuestionRef.current = question;
+    if (question) {
+      sessionStorage.setItem(pendingStorageKey(agent.key), question);
+    }
+  }
 
   const nextMessageId = useCallback((prefix: string) => {
     messageSequenceRef.current += 1;
     return `${prefix}-${Date.now()}-${messageSequenceRef.current}`;
+  }, []);
+
+  const setRequesting = useCallback((value: boolean) => {
+    isRequestingRef.current = value;
+    setIsRequesting(value);
   }, []);
 
   const cancelRequest = useCallback(() => {
@@ -100,7 +132,7 @@ export default function ChatPage() {
     activeAnswerRef.current = null;
     requestRef.current?.abort();
     requestRef.current = null;
-    setIsRequesting(false);
+    setRequesting(false);
 
     if (activeAnswerId) {
       setMessages((current) =>
@@ -115,20 +147,20 @@ export default function ChatPage() {
         ),
       );
     }
-  }, []);
+  }, [setRequesting]);
 
   const submit = useCallback(
     (rawQuestion: string) => {
       const question = rawQuestion.trim();
-      if (!question || isRequesting || activeAnswerRef.current) {
-        return;
+      if (!question || isRequestingRef.current || activeAnswerRef.current) {
+        return false;
       }
 
       const userId = nextMessageId('user');
       const answerId = nextMessageId('assistant');
 
       setValue('');
-      setIsRequesting(true);
+      setRequesting(true);
       activeAnswerRef.current = answerId;
       shouldFollowOutputRef.current = true;
       setMessages((current) => [
@@ -177,7 +209,8 @@ export default function ChatPage() {
 
             activeAnswerRef.current = null;
             requestRef.current = null;
-            setIsRequesting(false);
+            setRequesting(false);
+            sessionStorage.removeItem(pendingStorageKey(agent.key));
             setMessages((current) =>
               current.map((message) =>
                 message.id === answerId
@@ -199,7 +232,11 @@ export default function ChatPage() {
 
             activeAnswerRef.current = null;
             requestRef.current = null;
-            setIsRequesting(false);
+            setRequesting(false);
+            // Keep pending question on abort so remount can retry; clear real errors.
+            if (error.name !== 'AbortError') {
+              sessionStorage.removeItem(pendingStorageKey(agent.key));
+            }
             setMessages((current) =>
               current.map((message) =>
                 message.id === answerId
@@ -209,7 +246,8 @@ export default function ChatPage() {
                       content:
                         error.name === 'AbortError'
                           ? message.content || '已停止生成。'
-                          : '暂时无法连接智能服务，请确认 FastAPI 服务已启动后重试。',
+                          : error.message ||
+                            '暂时无法连接智能服务，请确认 FastAPI 服务已启动后重试。',
                     }
                   : message,
               ),
@@ -217,26 +255,57 @@ export default function ChatPage() {
           },
         },
       );
+
+      return true;
     },
-    [agent.key, isRequesting, nextMessageId],
+    [agent.key, nextMessageId, setRequesting],
   );
 
+  // Auto-ask when arriving from the home composer with a question.
   useEffect(() => {
-    const state = location.state as ChatLocationState | null;
-    const queryQuestion = new URLSearchParams(location.search).get('q')?.trim();
-    const initialQuestion = state?.initialQuestion?.trim() || queryQuestion;
-
-    if (!initialRequestHandledRef.current && initialQuestion) {
-      initialRequestHandledRef.current = true;
-      submit(initialQuestion);
-      navigate(location.pathname, { replace: true, state: null });
+    if (autoStartedRef.current) {
+      return;
     }
-  }, [location.pathname, location.search, location.state, navigate, submit]);
+
+    const question =
+      entryQuestionRef.current ||
+      sessionStorage.getItem(pendingStorageKey(agent.key))?.trim() ||
+      '';
+
+    if (!question) {
+      return;
+    }
+
+    autoStartedRef.current = true;
+    const started = submit(question);
+
+    if (started) {
+      // Clean the query string without React Router navigation, so we do not
+      // remount the chat tree or race AnimatePresence/Outlet.
+      if (window.location.search) {
+        window.history.replaceState(
+          null,
+          '',
+          `${location.pathname}${window.location.hash ?? ''}`,
+        );
+      }
+      // Keep storage until the stream settles so Strict Mode remount can retry.
+    } else {
+      autoStartedRef.current = false;
+    }
+  }, [agent.key, location.pathname, submit]);
 
   useEffect(
     () => () => {
+      // Capture this mount's controller; delayed abort avoids fighting Strict Mode
+      // remounts that immediately start a fresh request on a new instance.
+      const active = requestRef.current;
+      window.setTimeout(() => {
+        active?.abort();
+      }, 0);
       activeAnswerRef.current = null;
-      requestRef.current?.abort();
+      isRequestingRef.current = false;
+      requestRef.current = null;
     },
     [],
   );
@@ -390,27 +459,35 @@ export default function ChatPage() {
           return {
             ...baseItem,
             contentRender: () => (
-                <div className={styles.introContent}>
-                  <XMarkdown
-                    rootClassName={styles.markdown}
-                    content={message.content}
-                  />
-                  <Typography.Text className={styles.promptLabel}>
-                    你可以从这些问题开始
-                  </Typography.Text>
-                  <Prompts
-                    items={introPrompts}
-                    wrap
-                    fadeIn
-                    classNames={{
-                      root: styles.introPrompts,
-                      item: styles.introPromptItem,
-                      itemContent: styles.introPromptContent,
-                    }}
-                    onItemClick={({ data }) => submit(data.key)}
-                  />
+              <div className={styles.introContent}>
+                <div className={styles.introStage}>
+                  <AgentGlyph agentKey={agent.key} size="medium" active />
+                  <div className={styles.introCopy}>
+                    <Typography.Text className={styles.introEyebrow}>
+                      {agent.shortName}
+                    </Typography.Text>
+                    <XMarkdown
+                      rootClassName={styles.markdown}
+                      content={message.content}
+                    />
+                  </div>
                 </div>
-              ),
+                <Typography.Text className={styles.promptLabel}>
+                  你可以从这些问题开始
+                </Typography.Text>
+                <Prompts
+                  items={introPrompts}
+                  wrap
+                  fadeIn={!reduceMotion}
+                  classNames={{
+                    root: styles.introPrompts,
+                    item: styles.introPromptItem,
+                    itemContent: styles.introPromptContent,
+                  }}
+                  onItemClick={({ data }) => submit(data.key)}
+                />
+              </div>
+            ),
           };
         }
 
@@ -442,16 +519,13 @@ export default function ChatPage() {
           ) : undefined,
         };
       }),
-    [introPrompts, messages, submit],
+    [agent.key, agent.shortName, introPrompts, messages, reduceMotion, submit],
   );
 
   return (
     <main className={styles.page}>
-      <motion.section
+      <section
         className={styles.conversation}
-        initial={reduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.28 }}
         aria-label={`${agent.name}对话`}
       >
         <div className={styles.messageViewport}>
@@ -473,7 +547,9 @@ export default function ChatPage() {
             submitType="enter"
             placeholder={agent.placeholder}
             onChange={setValue}
-            onSubmit={submit}
+            onSubmit={(next) => {
+              submit(next);
+            }}
             onCancel={cancelRequest}
             rootClassName={styles.sender}
           />
@@ -481,7 +557,7 @@ export default function ChatPage() {
             AI 生成内容仅供参考，请结合实际场景完成专业验证
           </Typography.Text>
         </footer>
-      </motion.section>
+      </section>
     </main>
   );
 }

@@ -2,37 +2,37 @@ import type { AgentDefinition, AgentKey } from '../types/agent';
 
 export const agents: readonly AgentDefinition[] = [
   {
-    key: 'rd_qa',
-    shortName: '研发问答',
-    name: '研发问答助手',
-    description: '拆解技术难题，形成可验证的研发路径。',
+    key: 'achievement_match',
+    shortName: '成果匹配',
+    name: '成果匹配助手',
+    description: '把技术成果与应用场景、产业需求快速对齐。',
     detail:
-      '围绕材料、工艺、结构与测试等研发问题，梳理关键机理、验证变量和下一步行动。',
-    placeholder: '请输入研发技术问题，Enter 发送，Shift + Enter 换行',
+      '围绕成果能力、适用边界与目标场景，匹配更合适的落地方向、合作入口与验证路径。',
+    placeholder: '请描述技术成果、能力优势或目标场景，Enter 发送，Shift + Enter 换行',
     greeting:
-      '研发难题卡住了？我会帮你拆解技术问题，梳理关键机理，并给出清晰的验证路径。',
+      '告诉我你的技术成果或能力画像，我会帮你匹配更合适的应用场景与落地方向。',
     prompts: [
-      '怎样提高高分子材料的耐老化性能？',
-      '如何提升光伏发电系统的能量转化效率？',
-      '如何有效增强高温合金的抗蠕变性能？',
-      '如何设计一套新材料技术路线的验证方案？',
+      '这项新材料成果适合进入哪些应用场景？',
+      '如何把实验室成果转化为可对接的产业需求？',
+      '评估某项检测技术与制造场景的匹配度。',
+      '怎样判断一个成果是否具备首轮试点价值？',
     ],
   },
   {
-    key: 'tech_scout',
-    shortName: '技术预研',
-    name: '技术预研助手',
-    description: '洞察技术现状、演进路线与突破窗口。',
+    key: 'expert_recommend',
+    shortName: '专家推荐',
+    name: '专家推荐助手',
+    description: '按任务目标推荐合适的专家与能力组合。',
     detail:
-      '聚合技术路线、产业动向和竞争格局，辅助判断方向价值、技术成熟度与布局时机。',
-    placeholder: '请输入预研方向或技术主题，Enter 发送，Shift + Enter 换行',
+      '根据技术方向、问题阶段与合作目标，梳理专家画像、筛选维度与对接建议。',
+    placeholder: '请输入技术方向、任务目标或专家需求，Enter 发送，Shift + Enter 换行',
     greeting:
-      '告诉我你关注的技术方向，我会从现状、趋势、成熟度和潜在机会展开预研。',
+      '描述你的技术方向与任务目标，我会帮你梳理需要什么样的专家以及如何筛选。',
     prompts: [
-      '固态电池近三年的关键技术路线有哪些？',
-      '具身智能传感器的发展趋势是什么？',
-      '评估低空经济中的高价值技术机会。',
-      '如何判断一项新兴技术是否进入布局窗口？',
+      '推荐先进复合材料方向的产学研专家画像。',
+      '如何筛选适合联合攻关的技术专家？',
+      '解决高温合金失效问题需要哪些专家能力？',
+      '怎样设计一份高质量的专家对接需求？',
     ],
   },
   {
@@ -87,20 +87,37 @@ export const agents: readonly AgentDefinition[] = [
     ],
   },
   {
+    key: 'policy_service',
+    shortName: '政策服务',
+    name: '政策服务助手',
+    description: '梳理科创政策、申报路径与合规要点。',
+    detail:
+      '围绕产业政策、项目申报、资助条件与合规边界，帮助形成可执行的政策利用方案。',
+    placeholder: '请输入政策主题、申报目标或企业条件，Enter 发送，Shift + Enter 换行',
+    greeting:
+      '告诉我你的政策关注点或申报目标，我会帮你梳理适用政策、条件与推进步骤。',
+    prompts: [
+      '梳理人工智能与制造业融合相关支持政策。',
+      '中小科技企业有哪些常见的项目申报路径？',
+      '如何判断一个项目是否符合专项资助条件？',
+      '准备政策申报材料时应注意哪些关键信息？',
+    ],
+  },
+  {
     key: 'innovation_resources',
     shortName: '科创资源',
     name: '科创资源助手',
-    description: '汇聚专家、成果、项目、企业与政策线索。',
+    description: '汇聚成果、项目、企业与平台等资源线索。',
     detail:
       '围绕明确目标组织多类科技创新资源，给出筛选依据、价值判断与后续使用建议。',
     placeholder: '请输入资源目标与筛选条件，Enter 发送，Shift + Enter 换行',
     greeting:
-      '告诉我你的目标与筛选条件，我会帮你组织需要寻找的专家、成果、项目和政策资源。',
+      '告诉我你的目标与筛选条件，我会帮你组织需要寻找的科创资源与使用建议。',
     prompts: [
-      '梳理人工智能与制造业融合相关政策。',
-      '寻找先进复合材料领域的专家与成果线索。',
       '如何建立一个项目申报资源清单？',
       '按技术方向整理可利用的科创资源类型。',
+      '寻找先进制造方向的平台与载体线索。',
+      '怎样评估一条科创资源线索的可信度？',
     ],
   },
 ] as const;
@@ -114,4 +131,3 @@ export function getAgent(key?: string): AgentDefinition {
 export function isAgentKey(value: string): value is AgentKey {
   return agents.some((agent) => agent.key === value);
 }
-

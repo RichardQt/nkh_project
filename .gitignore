@@ -1,10 +1,23 @@
+# secrets
+backend/.env
+.env
+.env.local
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# node
 frontend/node_modules/
 frontend/dist/
-frontend/*.tsbuildinfo
-backend/.venv/
-backend/**/__pycache__/
-backend/**/*.py[cod]
-.idea/
-.vscode/
+frontend/debug-home.png
+
+# os / ide
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
+
+*.md

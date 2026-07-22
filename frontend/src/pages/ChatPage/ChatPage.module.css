@@ -7,10 +7,10 @@
 
 .conversation {
   display: flex;
-  width: min(100%, 1024px);
+  width: min(100%, 880px);
   height: 100%;
   margin: 0 auto;
-  padding: 24px 32px 14px;
+  padding: 16px 24px 12px;
   flex-direction: column;
 }
 
@@ -25,24 +25,24 @@
 }
 
 .bubbleScroll {
-  padding: 8px 4px 32px;
-  scrollbar-color: #cbd5e1 transparent;
+  padding: 4px 2px 24px;
+  scrollbar-color: #c5cad3 transparent;
   scrollbar-width: thin;
 }
 
 .assistantBubble {
   width: 100% !important;
-  max-width: 920px;
+  max-width: 100%;
   padding-inline-end: 0 !important;
 }
 
 .assistantBubbleContent {
   width: 100%;
-  padding: 18px !important;
-  background: #ffffff !important;
+  padding: 16px 18px !important;
+  background: var(--surface) !important;
   border-color: var(--border) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 5px 18px rgba(31, 46, 78, 0.035);
+  border-radius: var(--radius-md) !important;
+  box-shadow: none !important;
 }
 
 .assistantBubbleBody {
@@ -51,13 +51,15 @@
 }
 
 .userBubble {
-  max-width: 85%;
+  max-width: 78%;
 }
 
 .userBubbleContent {
-  color: #19396f !important;
-  background: #e8efff !important;
-  border-radius: 12px 12px 4px 12px !important;
+  color: var(--text) !important;
+  background: var(--primary-soft) !important;
+  border: 1px solid transparent !important;
+  border-radius: 14px 14px 4px 14px !important;
+  box-shadow: none !important;
 }
 
 .answerContent {
@@ -65,17 +67,17 @@
 }
 
 .thoughtChain {
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  background: #f7f9fc;
-  border: 1px solid var(--border-soft);
-  border-radius: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .markdown {
   color: var(--text);
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 14.5px;
+  line-height: 1.72;
 }
 
 .markdown :global(p:first-child) {
@@ -92,21 +94,44 @@
   border: 1px solid var(--border);
   border-collapse: separate;
   border-spacing: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .markdown :global(th) {
-  background: #f1f4f8;
+  background: var(--surface-muted);
 }
 
 .introContent {
   width: 100%;
 }
 
+.introStage {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.introCopy {
+  min-width: 0;
+  flex: 1;
+}
+
+.introEyebrow {
+  display: inline-flex;
+  margin-bottom: 6px !important;
+  padding: 2px 8px;
+  color: var(--primary) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
+  background: var(--primary-soft);
+  border-radius: 999px;
+}
+
 .promptLabel {
   display: block;
   margin: 18px 0 10px;
-  color: var(--text-secondary) !important;
+  color: var(--text-tertiary) !important;
   font-size: 12px;
   font-weight: 500;
 }
@@ -118,18 +143,19 @@
 .introPromptItem {
   width: calc(33.333% - 8px);
   min-width: 0;
-  min-height: 70px;
+  min-height: 72px;
   flex: 0 0 calc(33.333% - 8px) !important;
   padding: 12px !important;
-  color: #434654;
-  background: #f9fbfd !important;
+  color: var(--text-secondary);
+  background: var(--surface-muted) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 10px !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: none;
   transition:
-    color 160ms ease,
-    border-color 160ms ease,
-    background-color 160ms ease,
-    transform 160ms ease !important;
+    color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    transform 160ms var(--ease-out) !important;
 }
 
 .introPromptContent {
@@ -147,45 +173,54 @@
 }
 
 .introPromptItem:hover {
-  color: #174dbd !important;
-  background: var(--primary-soft) !important;
-  border-color: #b9cbfb !important;
-  transform: translateY(-2px);
+  color: var(--text) !important;
+  background: var(--surface) !important;
+  border-color: var(--border-strong) !important;
+  transform: translateY(-1px);
 }
 
 .composerDock {
   position: relative;
   z-index: 3;
   flex: 0 0 auto;
-  padding-top: 12px;
-  background: var(--canvas);
+  padding-top: 8px;
 }
 
 .composerDock::before {
   position: absolute;
-  inset: -24px 0 auto;
+  inset: -28px 0 auto;
   z-index: -1;
-  height: 24px;
+  height: 28px;
   content: '';
-  background: var(--canvas);
+  background: linear-gradient(
+    180deg,
+    rgba(244, 245, 247, 0) 0%,
+    rgba(244, 245, 247, 0.92) 70%,
+    var(--canvas) 100%
+  );
+  pointer-events: none;
+}
+
+.composerShell {
+  border-radius: var(--radius-lg);
 }
 
 .sender {
-  min-height: 58px;
-  background: #ffffff !important;
-  border-color: var(--border) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 10px 32px rgba(31, 46, 78, 0.07) !important;
+  min-height: 56px;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
   transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease !important;
+    border-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out) !important;
 }
 
 .sender:focus-within {
-  border-color: var(--primary) !important;
+  border-color: rgba(43, 92, 255, 0.35) !important;
   box-shadow:
-    0 0 0 3px rgba(53, 109, 243, 0.1),
-    0 12px 34px rgba(31, 46, 78, 0.08) !important;
+    0 0 0 3px rgba(43, 92, 255, 0.1),
+    var(--shadow-sm) !important;
 }
 
 .sender :global(textarea:focus) {
@@ -196,12 +231,13 @@
   display: block;
   padding-top: 8px;
   text-align: center;
+  color: var(--text-tertiary) !important;
   font-size: 11px;
 }
 
 @media (max-width: 720px) {
   .conversation {
-    padding: 16px 12px 10px;
+    padding: 12px 12px 10px;
   }
 
   .assistantBubbleContent {
@@ -209,7 +245,7 @@
   }
 
   .userBubble {
-    max-width: 92%;
+    max-width: 90%;
   }
 
   .introPromptItem {
@@ -217,7 +253,8 @@
     flex: 0 0 100% !important;
   }
 
-  .bubbleScroll {
-    padding-bottom: 22px;
+  .introStage {
+    flex-direction: column;
+    gap: 10px;
   }
 }

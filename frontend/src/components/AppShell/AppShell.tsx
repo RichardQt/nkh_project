@@ -6,9 +6,10 @@ import {
   RobotOutlined,
 } from '@ant-design/icons';
 import { Button, Divider, Drawer, Layout, Space, Typography } from 'antd';
-import { motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { getAgent } from '../../data/agents';
+import { tweenUi } from '../../motion/tokens';
 import styles from './AppShell.module.css';
 
 const { Content, Header, Sider } = Layout;
@@ -97,6 +98,9 @@ export default function AppShell() {
     navigate(path);
   };
 
+  // 首页不展示顶部导航条，内容区全高
+  const isHome = location.pathname === '/';
+
   return (
     <Layout className={styles.appLayout}>
       <Sider width={260} className={styles.desktopSider} theme="light">
@@ -122,30 +126,57 @@ export default function AppShell() {
       </Drawer>
 
       <Layout className={styles.mainLayout}>
-        <Header className={styles.topbar}>
-          <Space size={12}>
-            <Button
-              type="text"
-              icon={<MenuOutlined />}
-              className={styles.mobileMenuButton}
-              onClick={() => setDrawerOpen(true)}
-              aria-label="打开主导航"
-            />
-            <Typography.Title level={1} className={styles.pageTitle}>
-              {title}
-            </Typography.Title>
-          </Space>
-        </Header>
+        {!isHome && (
+          <Header className={styles.topbar}>
+            <Space size={12} align="center">
+              <Button
+                type="text"
+                icon={<MenuOutlined />}
+                className={styles.mobileMenuButton}
+                onClick={() => setDrawerOpen(true)}
+                aria-label="打开主导航"
+              />
+              <div className={styles.titleBlock}>
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={title}
+                    className={styles.titleMotion}
+                    initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={reduceMotion ? undefined : { opacity: 0, y: -3 }}
+                    transition={reduceMotion ? { duration: 0 } : tweenUi}
+                  >
+                    <Typography.Title level={1} className={styles.pageTitle}>
+                      {title}
+                    </Typography.Title>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </Space>
+          </Header>
+        )}
 
-        <Content className={styles.content}>
-          <motion.div
-            className={styles.routeFrame}
-            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-          >
+        {isHome && (
+          <Button
+            type="text"
+            icon={<MenuOutlined />}
+            className={styles.homeMobileMenuButton}
+            onClick={() => setDrawerOpen(true)}
+            aria-label="打开主导航"
+          />
+        )}
+
+        <Content
+          className={`${styles.content} ${isHome ? styles.contentFullHeight : ''}`}
+        >
+          {/*
+            Do NOT wrap <Outlet /> in AnimatePresence.
+            Presence + React Router Outlet frequently leaves a blank content pane
+            after query-string cleanup or route swaps.
+          */}
+          <div className={styles.routeFrame}>
             <Outlet />
-          </motion.div>
+          </div>
         </Content>
       </Layout>
     </Layout>

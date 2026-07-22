@@ -4,6 +4,7 @@ import { XProvider } from '@ant-design/x';
 import zhCNX from '@ant-design/x/locale/zh_CN';
 import zhCN from 'antd/locale/zh_CN';
 import '@ant-design/x-markdown/themes/light.css';
+import '@fontsource-variable/outfit/wght.css';
 import 'antd/dist/reset.css';
 import App from './App';
 import './styles/global.css';
@@ -21,35 +22,36 @@ createRoot(root).render(
       cssVar: { prefix: 'rd' },
       hashed: false,
       token: {
-        colorPrimary: '#356df3',
-        colorInfo: '#356df3',
+        colorPrimary: '#2b5cff',
+        colorInfo: '#2b5cff',
         colorBgBase: '#ffffff',
-        colorBgLayout: '#f4f7fb',
+        colorBgLayout: '#f4f5f7',
         colorBgContainer: '#ffffff',
-        colorText: '#181c1f',
-        colorTextSecondary: '#667085',
-        colorBorder: '#dde5f0',
-        colorBorderSecondary: '#e8eef6',
+        colorText: '#111827',
+        colorTextSecondary: '#5b6472',
+        colorBorder: 'rgba(17, 24, 39, 0.1)',
+        colorBorderSecondary: 'rgba(17, 24, 39, 0.06)',
         borderRadius: 10,
         borderRadiusLG: 14,
         controlHeight: 40,
         fontSize: 14,
         fontFamily:
-          'Inter, MiSans, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+          '"Outfit Variable", Outfit, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+        boxShadowTertiary: '0 10px 28px rgba(17, 24, 39, 0.05)',
       },
       components: {
         Button: {
-          borderRadius: 8,
+          borderRadius: 10,
           fontWeight: 500,
           primaryShadow: 'none',
         },
         Card: {
           borderRadiusLG: 14,
-          boxShadowTertiary: '0 8px 28px rgba(24, 28, 31, 0.05)',
+          boxShadowTertiary: '0 10px 28px rgba(17, 24, 39, 0.05)',
         },
         Layout: {
-          bodyBg: '#f4f7fb',
-          headerBg: '#ffffff',
+          bodyBg: '#f4f5f7',
+          headerBg: 'rgba(255, 255, 255, 0.82)',
           siderBg: '#ffffff',
         },
       },

@@ -8,15 +8,18 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import AgentGlyph from '../../components/AgentGlyph/AgentGlyph';
 import { agents, defaultAgent } from '../../data/agents';
+import { easeOut } from '../../motion/tokens';
 import type { AgentKey } from '../../types/agent';
 import styles from './HomePage.module.css';
+
+/** Keep hero icon / title / description in lockstep when switching agents. */
+const switchTransition = { duration: 0.16, ease: easeOut } as const;
 
 export default function HomePage() {
   const [selectedKey, setSelectedKey] = useState<AgentKey>(defaultAgent.key);
   const [value, setValue] = useState('');
   const [recommendationsOpen, setRecommendationsOpen] = useState(false);
   const senderRef = useRef<ComponentRef<typeof Sender>>(null);
-  const composerRegionRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
 
@@ -71,7 +74,6 @@ export default function HomePage() {
   const selectAgent = (key: AgentKey) => {
     setSelectedKey(key);
     setValue('');
-    // 切换智能体时不自动展开推荐问题，等用户再次点击输入框聚焦后再显示
     setRecommendationsOpen(false);
   };
 
@@ -95,25 +97,34 @@ export default function HomePage() {
           className={styles.hero}
           initial={reduceMotion ? false : { opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          transition={
+            reduceMotion ? { duration: 0 } : { duration: 0.4, ease: easeOut }
+          }
         >
           <Welcome
             variant="borderless"
             icon={
-              <motion.div
-                className={styles.heroMark}
-                animate={
-                  reduceMotion
-                    ? undefined
-                    : { y: [0, -3, 0], rotate: [0, 1.5, 0] }
-                }
-                transition={{ duration: 4.8, repeat: Infinity, ease: 'easeInOut' }}
-              >
-                <AgentGlyph agentKey={selectedAgent.key} size="large" active />
-              </motion.div>
+              <div className={styles.heroMarkShell}>
+                <AnimatePresence initial={false}>
+                  <motion.div
+                    key={selectedAgent.key}
+                    className={styles.heroMark}
+                    initial={reduceMotion ? false : { opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={reduceMotion ? undefined : { opacity: 0 }}
+                    transition={reduceMotion ? { duration: 0 } : switchTransition}
+                  >
+                    <AgentGlyph
+                      agentKey={selectedAgent.key}
+                      size="large"
+                      active
+                    />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
             }
-            title="AI 创新助手"
-            description="连接研发问题、技术趋势、合作伙伴与科创资源，为每一次创新决策提供清晰路径。"
+            title={selectedAgent.name}
+            description={selectedAgent.description}
             classNames={{
               root: styles.welcome,
               icon: styles.welcomeIcon,
@@ -125,7 +136,7 @@ export default function HomePage() {
           <Flex
             wrap
             justify="center"
-            gap={10}
+            gap={8}
             className={styles.agentSelector}
             role="tablist"
             aria-label="选择智能体"
@@ -137,11 +148,16 @@ export default function HomePage() {
                   key={agent.key}
                   initial={reduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.28, delay: index * 0.035 }}
+                  transition={{
+                    duration: 0.28,
+                    delay: reduceMotion ? 0 : 0.06 + index * 0.03,
+                    ease: easeOut,
+                  }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.98 }}
                 >
                   <Button
                     type={selected ? 'primary' : 'default'}
-                    className={styles.agentButton}
+                    className={`${styles.agentButton} ${selected ? styles.agentButtonSelected : ''}`}
                     icon={
                       <AgentGlyph
                         agentKey={agent.key}
@@ -160,9 +176,15 @@ export default function HomePage() {
             })}
           </Flex>
 
-          <div
-            ref={composerRegionRef}
+          <motion.div
             className={styles.composerRegion}
+            initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.36,
+              delay: reduceMotion ? 0 : 0.12,
+              ease: easeOut,
+            }}
             onFocusCapture={openRecommendations}
             onBlurCapture={handleComposerBlur}
             onKeyDownCapture={handleComposerKeyDown}
@@ -170,14 +192,31 @@ export default function HomePage() {
             <Sender
               ref={senderRef}
               value={value}
-              autoSize={{ minRows: 4, maxRows: 8 }}
+              autoSize={{ minRows: 2, maxRows: 6 }}
               submitType="enter"
               placeholder={selectedAgent.placeholder}
               onChange={setValue}
               onFocus={openRecommendations}
               onSubmit={submit}
               rootClassName={styles.sender}
-              classNames={{ input: styles.senderInput }}
+              classNames={{
+                input: styles.senderInput,
+                content: styles.senderContent,
+              }}
+              styles={{
+                content: {
+                  alignItems: 'flex-start',
+                  paddingTop: 12,
+                  paddingBottom: 12,
+                },
+                input: {
+                  alignSelf: 'flex-start',
+                  paddingTop: 0,
+                  paddingBottom: 0,
+                  lineHeight: '24px',
+                  minHeight: 48,
+                },
+              }}
               suffix={(_, { components }) => {
                 const { SendButton } = components;
                 return (
@@ -206,21 +245,19 @@ export default function HomePage() {
                       ? { display: 'none' }
                       : { height: 0, opacity: 0, y: -4 }
                   }
-                  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: 0.28, ease: easeOut }}
                   onMouseDown={(event) => event.preventDefault()}
                 >
                   <div className={styles.recommendationHeader}>
-                    <div>
-                      <Typography.Text strong>推荐问题</Typography.Text>
-                      <Typography.Text type="secondary">
-                        为{selectedAgent.shortName}准备的常用提问
-                      </Typography.Text>
-                    </div>
+                    <Typography.Text strong>推荐问题</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {selectedAgent.shortName}
+                    </Typography.Text>
                   </div>
                   <Prompts
                     items={promptItems}
                     vertical
-                    fadeIn
+                    fadeIn={!reduceMotion}
                     classNames={{
                       root: styles.prompts,
                       list: styles.promptList,
@@ -233,7 +270,7 @@ export default function HomePage() {
                 </motion.section>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     </main>

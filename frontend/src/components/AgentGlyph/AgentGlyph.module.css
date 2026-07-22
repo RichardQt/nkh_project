@@ -1,27 +1,31 @@
 .glyph {
-  color: #2458d6 !important;
-  background: #eaf0ff !important;
-  border: 1px solid #d3dfff;
+  color: var(--primary) !important;
+  background: var(--primary-soft) !important;
+  border: 1px solid rgba(43, 92, 255, 0.12) !important;
+  box-shadow: none !important;
+  transition:
+    color 160ms var(--ease-out),
+    background 160ms var(--ease-out),
+    border-color 160ms var(--ease-out) !important;
 }
 
 .small {
   font-size: 12px !important;
-  border-radius: 6px !important;
+  border-radius: 7px !important;
 }
 
 .medium {
-  font-size: 19px !important;
+  font-size: 18px !important;
   border-radius: 10px !important;
 }
 
 .large {
-  font-size: 21px !important;
+  font-size: 20px !important;
   border-radius: 12px !important;
 }
 
 .active {
   color: #ffffff !important;
-  background: #356df3 !important;
-  border-color: #356df3 !important;
+  background: var(--primary) !important;
+  border-color: transparent !important;
 }
-

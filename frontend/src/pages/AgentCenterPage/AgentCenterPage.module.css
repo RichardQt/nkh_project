@@ -6,14 +6,14 @@
 }
 
 .container {
-  width: min(100%, 1160px);
+  width: min(100%, 1080px);
   margin: 0 auto;
-  padding: 44px 32px 72px;
+  padding: 36px 28px 64px;
 }
 
 .intro {
-  max-width: 640px;
-  margin-bottom: 30px;
+  max-width: 36rem;
+  margin-bottom: 28px;
 }
 
 .intro :global(.ant-typography) {
@@ -21,18 +21,22 @@
 }
 
 .intro :global(h2.ant-typography) {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   color: var(--text);
-  font-size: 28px;
+  font-size: clamp(24px, 2.4vw, 30px);
   font-weight: 650;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  text-wrap: balance;
 }
 
 .intro :global(p.ant-typography) {
   margin-bottom: 0;
   color: var(--text-secondary);
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 1.7;
+  max-width: 42rem;
+  text-wrap: pretty;
 }
 
 .cardMotion,
@@ -41,29 +45,33 @@
 }
 
 .agentCard {
-  min-height: 230px;
+  min-height: 220px;
   overflow: hidden;
   border-color: var(--border) !important;
-  box-shadow: 0 6px 22px rgba(31, 46, 78, 0.035) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--surface) !important;
+  box-shadow: none !important;
   transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease !important;
+    border-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    background-color 180ms var(--ease-out) !important;
 }
 
 .agentCard:hover,
 .agentCard:focus-visible {
-  border-color: #b9cbfb !important;
-  box-shadow: 0 14px 34px rgba(31, 73, 160, 0.09) !important;
+  border-color: rgba(43, 92, 255, 0.28) !important;
+  box-shadow: var(--shadow-sm) !important;
   outline: none;
 }
 
 .agentCard :global(.ant-card-body) {
   height: 100%;
-  padding: 22px;
+  padding: 20px;
 }
 
 .cardBody {
-  min-height: 184px;
+  min-height: 176px;
+  height: 100%;
 }
 
 .cardCopy {
@@ -71,24 +79,25 @@
 }
 
 .cardCopy :global(h4.ant-typography) {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: var(--text);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .cardCopy :global(p.ant-typography) {
   margin: 0;
-  color: #434654;
+  color: var(--text-secondary);
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
 .cardDetail {
-  margin: 18px 0 14px !important;
-  color: var(--text-secondary) !important;
+  margin: 16px 0 12px !important;
+  color: var(--text-tertiary) !important;
   font-size: 13px !important;
-  line-height: 1.7 !important;
+  line-height: 1.65 !important;
 }
 
 .enterButton {
@@ -99,18 +108,36 @@
   align-items: center;
   color: var(--primary) !important;
   font-size: 13px;
+  font-weight: 550;
+}
+
+.enterIcon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  transition: transform 160ms var(--ease-out);
+}
+
+.agentCard:hover .enterIcon,
+.agentCard:focus-visible .enterIcon {
+  transform: translateX(2px);
 }
 
 @media (max-width: 720px) {
   .container {
-    padding: 32px 16px 56px;
+    padding: 28px 16px 48px;
   }
 
   .intro {
-    margin-bottom: 22px;
+    margin-bottom: 20px;
   }
 
   .intro :global(h2.ant-typography) {
-    font-size: 24px;
+    font-size: 22px;
   }
 }

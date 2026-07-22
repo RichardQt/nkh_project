@@ -1,5 +1,3 @@
-import { XRequest } from '@ant-design/x-sdk';
-import type { SSEOutput } from '@ant-design/x-sdk';
 import type { AgentKey } from '../types/agent';
 
 interface ChatStreamInput {
@@ -17,55 +15,160 @@ export interface ChatStreamController {
   abort: () => void;
 }
 
-function parseData(data: unknown): Record<string, unknown> {
-  if (typeof data === 'string') {
-    try {
-      const parsed = JSON.parse(data) as unknown;
-      return parsed && typeof parsed === 'object'
-        ? (parsed as Record<string, unknown>)
-        : {};
-    } catch {
-      return { content: data };
+function parseSseChunk(raw: string): { event: string; data: string } | null {
+  const lines = raw.split(/\r?\n/);
+  let event = 'message';
+  const dataLines: string[] = [];
+
+  for (const line of lines) {
+    if (!line || line.startsWith(':')) {
+      continue;
+    }
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim();
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart());
     }
   }
 
-  return data && typeof data === 'object'
-    ? (data as Record<string, unknown>)
-    : {};
+  if (dataLines.length === 0) {
+    return null;
+  }
+
+  return { event, data: dataLines.join('\n') };
 }
 
+function extractContent(data: string): string | null {
+  try {
+    const payload = JSON.parse(data) as unknown;
+    if (!payload || typeof payload !== 'object') {
+      return typeof payload === 'string' ? payload : null;
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.content === 'string') {
+      return record.content;
+    }
+    return null;
+  } catch {
+    return data || null;
+  }
+}
+
+/**
+ * Stream chat tokens from the FastAPI SSE endpoint.
+ * Uses fetch + ReadableStream so custom `event: delta` frames are reliable.
+ */
 export function startChatStream(
   input: ChatStreamInput,
   callbacks: ChatStreamCallbacks,
 ): ChatStreamController {
-  const request = XRequest<ChatStreamInput, SSEOutput>('/api/chat/stream', {
-    manual: true,
-    headers: {
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-    },
-    timeout: 15_000,
-    streamTimeout: 30_000,
-    callbacks: {
-      onUpdate: (chunk) => {
-        if (chunk.event !== 'delta') {
-          return;
+  const controller = new AbortController();
+  let settled = false;
+
+  const settleError = (error: Error) => {
+    if (settled || controller.signal.aborted) {
+      return;
+    }
+    settled = true;
+    callbacks.onError(error);
+  };
+
+  const settleSuccess = () => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    callbacks.onComplete();
+  };
+
+  void (async () => {
+    try {
+      const response = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: {
+          Accept: 'text/event-stream',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(
+          detail || `聊天服务响应异常（${response.status}）`,
+        );
+      }
+
+      if (!response.body) {
+        throw new Error('浏览器不支持流式响应');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
         }
 
-        const payload = parseData(chunk.data);
-        if (typeof payload.content === 'string') {
-          callbacks.onDelta(payload.content);
-        }
-      },
-      onSuccess: () => callbacks.onComplete(),
-      onError: (error) => callbacks.onError(error),
-    },
-  });
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split(/\r?\n\r?\n/);
+        buffer = parts.pop() ?? '';
 
-  request.run(input);
+        for (const part of parts) {
+          const frame = parseSseChunk(part);
+          if (!frame) {
+            continue;
+          }
+
+          if (frame.event === 'delta') {
+            const content = extractContent(frame.data);
+            if (content) {
+              callbacks.onDelta(content);
+            }
+            continue;
+          }
+
+          if (frame.event === 'done') {
+            settleSuccess();
+            try {
+              await reader.cancel();
+            } catch {
+              // ignore
+            }
+            return;
+          }
+        }
+      }
+
+      // Stream closed without explicit done — still treat as complete.
+      settleSuccess();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        settleError(
+          Object.assign(new Error('已停止生成'), { name: 'AbortError' }),
+        );
+        return;
+      }
+
+      const err =
+        error instanceof Error
+          ? error
+          : new Error('暂时无法连接智能服务，请确认 FastAPI 服务已启动后重试。');
+      settleError(err);
+    }
+  })();
 
   return {
-    abort: () => request.abort(),
+    abort: () => {
+      if (!controller.signal.aborted) {
+        controller.abort();
+      }
+    },
   };
 }
-

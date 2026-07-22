@@ -21,30 +21,40 @@
 
 - FastAPI
 - Uvicorn
-- Python 标准库生成标准 SSE 数据流
+- httpx：调用 OpenAI 兼容的 Chat Completions 流式接口
+- python-dotenv：从 `backend/.env` 读取模型配置
 
-后端目前提供确定性的流式演示回答，接口结构已经与前端解耦。接入固定的真实 AI 服务时，只需替换 `backend/app/main.py` 内部回答生成逻辑，不需要增加账户、设置或模型配置页面。
+后端将前端的 `/api/chat/stream` 请求转发到配置的模型服务，密钥只保存在服务端 `.env`，前端不暴露 API Key 与模型供应商细节。
 
 ## 页面
 
-- `/`：AI 总入口。六个智能体可切换，输入框保持居中；聚焦输入框后，推荐问题面板从下方向下展开。
-- `/agents`：智能体中心。展示六个智能体的能力与适用范围，点击整张卡片进入独立对话。
+- `/`：AI 总入口。七个智能体可切换，输入框保持居中；聚焦输入框后，推荐问题面板从下方向下展开。
+- `/agents`：智能体中心。展示七个智能体的能力与适用范围，点击整张卡片进入独立对话。
 - `/chat/:agentKey`：对话页面。包含欢迎引导、三条推荐问题、流式回答、公开任务进度、复制、重新生成与停止生成。
 
-六个固定智能体：
+七个固定智能体：
 
-1. 研发问答
-2. 技术预研
+1. 成果匹配
+2. 专家推荐
 3. 技术合作
 4. 精准拓客
 5. 需求预测
-6. 科创资源
+6. 政策服务
+7. 科创资源
 
 系统不包含登录、账户、用户资料、历史记录、设置、模型选择、供应商选择或 API Key 管理界面。
 
 ## 本地启动
 
-先启动后端：
+先配置模型（可复制示例后填写）：
+
+```powershell
+cd D:\mynj\nkh_project\backend
+copy .env.example .env
+# 编辑 .env：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
+```
+
+再启动后端：
 
 ```powershell
 cd D:\mynj\nkh_project\backend
@@ -81,7 +91,7 @@ npm run dev
 
 ```json
 {
-  "agentKey": "rd_qa",
+  "agentKey": "achievement_match",
   "message": "如何提升材料耐久性？"
 }
 ```

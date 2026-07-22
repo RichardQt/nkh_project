@@ -1,9 +1,10 @@
 export type AgentKey =
-  | 'rd_qa'
-  | 'tech_scout'
+  | 'achievement_match'
+  | 'expert_recommend'
   | 'tech_partner'
   | 'precision_growth'
   | 'demand_forecast'
+  | 'policy_service'
   | 'innovation_resources';
 
 export interface AgentDefinition {
@@ -16,4 +17,3 @@ export interface AgentDefinition {
   greeting: string;
   prompts: readonly string[];
 }
-
