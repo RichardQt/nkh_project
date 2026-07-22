@@ -25,7 +25,8 @@ function PageBoundary({ children }: { children: ReactNode }) {
   );
 }
 
-function ChatRoute() {
+/** Specialist agent conversation: /chat/:agentKey */
+function AgentChatRoute() {
   const { agentKey } = useParams();
 
   if (!agentKey || !isAgentKey(agentKey)) {
@@ -34,7 +35,16 @@ function ChatRoute() {
 
   return (
     <PageBoundary>
-      <ChatPage key={agentKey} />
+      <ChatPage key={agentKey} agentKey={agentKey} />
+    </PageBoundary>
+  );
+}
+
+/** General conversation without a specialist agent: /chat */
+function GeneralChatRoute() {
+  return (
+    <PageBoundary>
+      <ChatPage key="general" agentKey={null} />
     </PageBoundary>
   );
 }
@@ -59,10 +69,8 @@ export default function App() {
             </PageBoundary>
           }
         />
-        <Route
-          path="chat/:agentKey"
-          element={<ChatRoute />}
-        />
+        <Route path="chat" element={<GeneralChatRoute />} />
+        <Route path="chat/:agentKey" element={<AgentChatRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

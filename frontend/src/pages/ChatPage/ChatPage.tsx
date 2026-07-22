@@ -6,13 +6,18 @@ import {
   useState,
 } from 'react';
 import type { ComponentRef } from 'react';
-import { RedoOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+  RedoOutlined,
+  RobotOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import {
   Actions,
   Bubble,
   Prompts,
   Sender,
   ThoughtChain,
+  Welcome,
 } from '@ant-design/x';
 import type {
   BubbleItemType,
@@ -21,15 +26,16 @@ import type {
   ThoughtChainProps,
 } from '@ant-design/x';
 import { XMarkdown } from '@ant-design/x-markdown';
-import { Button, Typography } from 'antd';
+import { Avatar, Button, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import AgentGlyph from '../../components/AgentGlyph/AgentGlyph';
 import { getAgent } from '../../data/agents';
 import {
   startChatStream,
   type ChatStreamController,
 } from '../../services/chatStream';
+import type { AgentKey } from '../../types/agent';
 import type { ChatMessage, ChatMessageStatus } from '../../types/chat';
 import styles from './ChatPage.module.css';
 
@@ -37,23 +43,41 @@ interface ChatLocationState {
   initialQuestion?: string;
 }
 
+interface ChatPageProps {
+  /** Specialist agent key, or null for general “AI 创新赋能助手” mode. */
+  agentKey: AgentKey | null;
+}
+
+const GENERAL_CHAT = {
+  sessionKey: 'general',
+  name: 'AI 创新赋能助手',
+  shortName: '创新赋能',
+  greeting:
+    '你好，我是 AI 创新赋能助手。你可以直接提问，我会综合成果、专家、合作、拓客、需求与政策等方向给出建议。',
+  placeholder: '描述你的创新问题或目标，Enter 发送，Shift + Enter 换行',
+  prompts: [
+    '如何把一项实验室成果推向产业应用？',
+    '初创团队怎样找到合适的技术合作伙伴？',
+    '近期有哪些适合科技企业的支持政策方向？',
+  ],
+} as const;
+
 function readEntryQuestion(search: string, state: unknown): string {
   const fromState =
     state && typeof state === 'object'
-      ? String(
-          (state as ChatLocationState).initialQuestion ?? '',
-        ).trim()
+      ? String((state as ChatLocationState).initialQuestion ?? '').trim()
       : '';
   const fromQuery = new URLSearchParams(search).get('q')?.trim() ?? '';
   return fromState || fromQuery;
 }
 
-function pendingStorageKey(agentKey: string) {
-  return `nkh:pending-question:${agentKey}`;
+function pendingStorageKey(sessionKey: string) {
+  return `nkh:pending-question:${sessionKey}`;
 }
 
 function createThoughtItems(
   status: ChatMessageStatus,
+  general: boolean,
 ): ThoughtChainProps['items'] {
   const terminalStatus =
     status === 'error' ? 'error' : status === 'abort' ? 'abort' : 'success';
@@ -61,15 +85,19 @@ function createThoughtItems(
   return [
     {
       key: 'retrieve',
-      title: '检索相关科技资料',
-      description: '匹配当前智能体的专业知识与任务线索',
+      title: general ? '理解问题与目标' : '检索相关科技资料',
+      description: general
+        ? '梳理问题边界、可用信息与回答重点'
+        : '匹配当前智能体的专业知识与任务线索',
       status: status === 'loading' ? 'loading' : terminalStatus,
       collapsible: true,
     },
     {
       key: 'organize',
-      title: '组织关键结论',
-      description: '将信息整理为可执行的分析与建议',
+      title: general ? '组织综合建议' : '组织关键结论',
+      description: general
+        ? '形成可执行的分析、建议与下一步动作'
+        : '将信息整理为可执行的分析与建议',
       status:
         status === 'loading' || status === 'updating'
           ? 'loading'
@@ -79,18 +107,25 @@ function createThoughtItems(
   ];
 }
 
-export default function ChatPage() {
-  const { agentKey } = useParams();
-  const agent = getAgent(agentKey);
+export default function ChatPage({ agentKey }: ChatPageProps) {
+  const isGeneral = agentKey == null;
+  const agent = isGeneral ? null : getAgent(agentKey);
+  const sessionKey = isGeneral ? GENERAL_CHAT.sessionKey : agent!.key;
+  const displayName = isGeneral ? GENERAL_CHAT.name : agent!.name;
+  const shortName = isGeneral ? GENERAL_CHAT.shortName : agent!.shortName;
+  const greeting = isGeneral ? GENERAL_CHAT.greeting : agent!.greeting;
+  const placeholder = isGeneral ? GENERAL_CHAT.placeholder : agent!.placeholder;
+  const prompts = isGeneral ? GENERAL_CHAT.prompts : agent!.prompts;
+
   const location = useLocation();
   const reduceMotion = useReducedMotion();
   const [value, setValue] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
-      id: `intro-${agent.key}`,
+      id: `intro-${sessionKey}`,
       role: 'assistant',
-      content: agent.greeting,
+      content: greeting,
       status: 'success',
       kind: 'intro',
     },
@@ -104,16 +139,16 @@ export default function ChatPage() {
   const previousMessageCountRef = useRef(messages.length);
   const smoothScrollLockUntilRef = useRef(0);
   const autoStartedRef = useRef(false);
-  // Capture entry question on first render of this mount (before any cleanup).
   const entryQuestionRef = useRef<string | null>(null);
+
   if (entryQuestionRef.current === null) {
     const fromRoute = readEntryQuestion(location.search, location.state);
     const fromStorage =
-      sessionStorage.getItem(pendingStorageKey(agent.key))?.trim() ?? '';
+      sessionStorage.getItem(pendingStorageKey(sessionKey))?.trim() ?? '';
     const question = fromRoute || fromStorage;
     entryQuestionRef.current = question;
     if (question) {
-      sessionStorage.setItem(pendingStorageKey(agent.key), question);
+      sessionStorage.setItem(pendingStorageKey(sessionKey), question);
     }
   }
 
@@ -122,9 +157,9 @@ export default function ChatPage() {
     return `${prefix}-${Date.now()}-${messageSequenceRef.current}`;
   }, []);
 
-  const setRequesting = useCallback((value: boolean) => {
-    isRequestingRef.current = value;
-    setIsRequesting(value);
+  const setRequesting = useCallback((next: boolean) => {
+    isRequestingRef.current = next;
+    setIsRequesting(next);
   }, []);
 
   const cancelRequest = useCallback(() => {
@@ -183,7 +218,11 @@ export default function ChatPage() {
       ]);
 
       requestRef.current = startChatStream(
-        { agentKey: agent.key, message: question },
+        {
+          // General mode intentionally omits specialist agent binding.
+          agentKey: isGeneral ? null : agentKey,
+          message: question,
+        },
         {
           onDelta: (content) => {
             if (activeAnswerRef.current !== answerId) {
@@ -210,7 +249,7 @@ export default function ChatPage() {
             activeAnswerRef.current = null;
             requestRef.current = null;
             setRequesting(false);
-            sessionStorage.removeItem(pendingStorageKey(agent.key));
+            sessionStorage.removeItem(pendingStorageKey(sessionKey));
             setMessages((current) =>
               current.map((message) =>
                 message.id === answerId
@@ -233,9 +272,8 @@ export default function ChatPage() {
             activeAnswerRef.current = null;
             requestRef.current = null;
             setRequesting(false);
-            // Keep pending question on abort so remount can retry; clear real errors.
             if (error.name !== 'AbortError') {
-              sessionStorage.removeItem(pendingStorageKey(agent.key));
+              sessionStorage.removeItem(pendingStorageKey(sessionKey));
             }
             setMessages((current) =>
               current.map((message) =>
@@ -258,10 +296,9 @@ export default function ChatPage() {
 
       return true;
     },
-    [agent.key, nextMessageId, setRequesting],
+    [agentKey, isGeneral, nextMessageId, sessionKey, setRequesting],
   );
 
-  // Auto-ask when arriving from the home composer with a question.
   useEffect(() => {
     if (autoStartedRef.current) {
       return;
@@ -269,7 +306,7 @@ export default function ChatPage() {
 
     const question =
       entryQuestionRef.current ||
-      sessionStorage.getItem(pendingStorageKey(agent.key))?.trim() ||
+      sessionStorage.getItem(pendingStorageKey(sessionKey))?.trim() ||
       '';
 
     if (!question) {
@@ -280,8 +317,6 @@ export default function ChatPage() {
     const started = submit(question);
 
     if (started) {
-      // Clean the query string without React Router navigation, so we do not
-      // remount the chat tree or race AnimatePresence/Outlet.
       if (window.location.search) {
         window.history.replaceState(
           null,
@@ -289,16 +324,13 @@ export default function ChatPage() {
           `${location.pathname}${window.location.hash ?? ''}`,
         );
       }
-      // Keep storage until the stream settles so Strict Mode remount can retry.
     } else {
       autoStartedRef.current = false;
     }
-  }, [agent.key, location.pathname, submit]);
+  }, [location.pathname, sessionKey, submit]);
 
   useEffect(
     () => () => {
-      // Capture this mount's controller; delayed abort avoids fighting Strict Mode
-      // remounts that immediately start a fresh request on a new instance.
       const active = requestRef.current;
       window.setTimeout(() => {
         active?.abort();
@@ -332,7 +364,7 @@ export default function ChatPage() {
     updateFollowPreference();
 
     return () => scrollBox.removeEventListener('scroll', updateFollowPreference);
-  }, [agent.key]);
+  }, [sessionKey]);
 
   useEffect(() => {
     const didAddMessage = messages.length > previousMessageCountRef.current;
@@ -360,7 +392,7 @@ export default function ChatPage() {
 
   const introPrompts: PromptsProps['items'] = useMemo(
     () =>
-      agent.prompts.slice(0, 3).map((prompt) => ({
+      prompts.slice(0, 3).map((prompt) => ({
         key: prompt,
         icon: <SearchOutlined />,
         label: (
@@ -378,7 +410,22 @@ export default function ChatPage() {
           </Button>
         ),
       })),
-    [agent.prompts, isRequesting, submit],
+    [isRequesting, prompts, submit],
+  );
+
+  const assistantAvatar = useMemo(
+    () =>
+      isGeneral ? (
+        <Avatar
+          shape="square"
+          size={42}
+          icon={<RobotOutlined />}
+          className={styles.generalAvatar}
+        />
+      ) : (
+        <AgentGlyph agentKey={agentKey!} size="medium" active />
+      ),
+    [agentKey, isGeneral],
   );
 
   const roleConfig: BubbleListProps['role'] = useMemo(
@@ -387,7 +434,7 @@ export default function ChatPage() {
         placement: 'start',
         variant: 'outlined',
         shape: 'corner',
-        avatar: <AgentGlyph agentKey={agent.key} size="medium" active />,
+        avatar: assistantAvatar,
         rootClassName: styles.assistantBubble,
         classNames: {
           body: styles.assistantBubbleBody,
@@ -401,7 +448,7 @@ export default function ChatPage() {
             <div className={styles.answerContent}>
               {kind === 'answer' && (
                 <ThoughtChain
-                  items={createThoughtItems(status)}
+                  items={createThoughtItems(status, isGeneral)}
                   defaultExpandedKeys={[]}
                   line="solid"
                   rootClassName={styles.thoughtChain}
@@ -435,7 +482,7 @@ export default function ChatPage() {
         classNames: { content: styles.userBubbleContent },
       },
     }),
-    [agent.key, reduceMotion],
+    [assistantAvatar, isGeneral, reduceMotion],
   );
 
   const bubbleItems: BubbleItemType[] = useMemo(
@@ -460,18 +507,31 @@ export default function ChatPage() {
             ...baseItem,
             contentRender: () => (
               <div className={styles.introContent}>
-                <div className={styles.introStage}>
-                  <AgentGlyph agentKey={agent.key} size="medium" active />
-                  <div className={styles.introCopy}>
-                    <Typography.Text className={styles.introEyebrow}>
-                      {agent.shortName}
-                    </Typography.Text>
-                    <XMarkdown
-                      rootClassName={styles.markdown}
-                      content={message.content}
-                    />
+                {isGeneral ? (
+                  <Welcome
+                    variant="borderless"
+                    title={displayName}
+                    description={message.content}
+                    classNames={{
+                      root: styles.generalWelcome,
+                      title: styles.generalWelcomeTitle,
+                      description: styles.generalWelcomeDescription,
+                    }}
+                  />
+                ) : (
+                  <div className={styles.introStage}>
+                    <AgentGlyph agentKey={agentKey!} size="medium" active />
+                    <div className={styles.introCopy}>
+                      <Typography.Text className={styles.introEyebrow}>
+                        {shortName}
+                      </Typography.Text>
+                      <XMarkdown
+                        rootClassName={styles.markdown}
+                        content={message.content}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
                 <Typography.Text className={styles.promptLabel}>
                   你可以从这些问题开始
                 </Typography.Text>
@@ -519,15 +579,21 @@ export default function ChatPage() {
           ) : undefined,
         };
       }),
-    [agent.key, agent.shortName, introPrompts, messages, reduceMotion, submit],
+    [
+      agentKey,
+      displayName,
+      introPrompts,
+      isGeneral,
+      messages,
+      reduceMotion,
+      shortName,
+      submit,
+    ],
   );
 
   return (
     <main className={styles.page}>
-      <section
-        className={styles.conversation}
-        aria-label={`${agent.name}对话`}
-      >
+      <section className={styles.conversation} aria-label={`${displayName}对话`}>
         <div className={styles.messageViewport}>
           <Bubble.List
             ref={bubbleListRef}
@@ -545,7 +611,7 @@ export default function ChatPage() {
             loading={isRequesting}
             autoSize={{ minRows: 1, maxRows: 6 }}
             submitType="enter"
-            placeholder={agent.placeholder}
+            placeholder={placeholder}
             onChange={setValue}
             onSubmit={(next) => {
               submit(next);

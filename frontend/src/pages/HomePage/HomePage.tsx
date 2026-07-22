@@ -7,24 +7,47 @@ import { Button, Flex, Typography } from 'antd';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import AgentGlyph from '../../components/AgentGlyph/AgentGlyph';
-import { agents, defaultAgent } from '../../data/agents';
+import { agents } from '../../data/agents';
 import { easeOut } from '../../motion/tokens';
 import type { AgentKey } from '../../types/agent';
 import styles from './HomePage.module.css';
 
-/** Keep hero icon / title / description in lockstep when switching agents. */
 const switchTransition = { duration: 0.16, ease: easeOut } as const;
 
+const BRAND = {
+  title: 'AI 创新赋能助手',
+  description:
+    '连接成果、专家、政策与产业需求，为创新决策提供清晰路径与可执行建议。',
+  placeholder: '描述你的创新问题或目标，Enter 发送，Shift + Enter 换行',
+  prompts: [
+    '如何把一项实验室成果推向产业应用？',
+    '初创团队怎样找到合适的技术合作伙伴？',
+    '近期有哪些适合科技企业的支持政策方向？',
+    '怎样判断一个技术方向是否值得继续投入？',
+  ],
+} as const;
+
 export default function HomePage() {
-  const [selectedKey, setSelectedKey] = useState<AgentKey>(defaultAgent.key);
+  // null = no agent selected → brand hero (AI 创新赋能助手)
+  const [selectedKey, setSelectedKey] = useState<AgentKey | null>(null);
   const [value, setValue] = useState('');
   const [recommendationsOpen, setRecommendationsOpen] = useState(false);
   const senderRef = useRef<ComponentRef<typeof Sender>>(null);
   const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
 
-  const selectedAgent =
-    agents.find((agent) => agent.key === selectedKey) ?? defaultAgent;
+  const selectedAgent = selectedKey
+    ? (agents.find((agent) => agent.key === selectedKey) ?? null)
+    : null;
+  const isBrandMode = !selectedAgent;
+
+  const activePrompts = selectedAgent
+    ? selectedAgent.prompts
+    : [...BRAND.prompts];
+  const activePlaceholder = selectedAgent
+    ? selectedAgent.placeholder
+    : BRAND.placeholder;
+  const promptLabel = selectedAgent ? selectedAgent.shortName : '综合推荐';
 
   const choosePrompt = (prompt: string) => {
     setValue(prompt);
@@ -32,25 +55,23 @@ export default function HomePage() {
     senderRef.current?.focus({ cursor: 'end' });
   };
 
-  const promptItems: PromptsProps['items'] = selectedAgent.prompts.map(
-    (prompt) => ({
-      key: prompt,
-      icon: <SearchOutlined />,
-      label: (
-        <Button
-          type="text"
-          block
-          className={styles.promptAction}
-          onClick={(event) => {
-            event.stopPropagation();
-            choosePrompt(prompt);
-          }}
-        >
-          {prompt}
-        </Button>
-      ),
-    }),
-  );
+  const promptItems: PromptsProps['items'] = activePrompts.map((prompt) => ({
+    key: prompt,
+    icon: <SearchOutlined />,
+    label: (
+      <Button
+        type="text"
+        block
+        className={styles.promptAction}
+        onClick={(event) => {
+          event.stopPropagation();
+          choosePrompt(prompt);
+        }}
+      >
+        {prompt}
+      </Button>
+    ),
+  }));
 
   const openRecommendations = () => {
     setRecommendationsOpen(true);
@@ -72,7 +93,8 @@ export default function HomePage() {
   };
 
   const selectAgent = (key: AgentKey) => {
-    setSelectedKey(key);
+    // Second click on the active agent clears selection.
+    setSelectedKey((current) => (current === key ? null : key));
     setValue('');
     setRecommendationsOpen(false);
   };
@@ -84,10 +106,14 @@ export default function HomePage() {
       return;
     }
 
-    navigate(
-      `/chat/${selectedAgent.key}?q=${encodeURIComponent(question)}`,
-      { state: { initialQuestion: question } },
-    );
+    // No agent selected → general chat (no specialist agent).
+    const path = selectedAgent
+      ? `/chat/${selectedAgent.key}`
+      : '/chat';
+
+    navigate(`${path}?q=${encodeURIComponent(question)}`, {
+      state: { initialQuestion: question },
+    });
   };
 
   return (
@@ -104,31 +130,46 @@ export default function HomePage() {
           <Welcome
             variant="borderless"
             icon={
-              <div className={styles.heroMarkShell}>
-                <AnimatePresence initial={false}>
-                  <motion.div
-                    key={selectedAgent.key}
-                    className={styles.heroMark}
-                    initial={reduceMotion ? false : { opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={reduceMotion ? undefined : { opacity: 0 }}
-                    transition={reduceMotion ? { duration: 0 } : switchTransition}
-                  >
-                    <AgentGlyph
-                      agentKey={selectedAgent.key}
-                      size="large"
-                      active
-                    />
-                  </motion.div>
-                </AnimatePresence>
-              </div>
+              selectedAgent ? (
+                <div className={styles.heroMarkShell}>
+                  <AnimatePresence initial={false}>
+                    <motion.div
+                      key={selectedAgent.key}
+                      className={styles.heroMark}
+                      initial={reduceMotion ? false : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={reduceMotion ? undefined : { opacity: 0 }}
+                      transition={
+                        reduceMotion ? { duration: 0 } : switchTransition
+                      }
+                    >
+                      <AgentGlyph
+                        agentKey={selectedAgent.key}
+                        size="large"
+                        active
+                      />
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+              ) : undefined
             }
-            title={selectedAgent.name}
-            description={selectedAgent.description}
+            title={
+              isBrandMode ? (
+                <span className={styles.brandTitle}>
+                  <span className={styles.brandTitleAccent}>AI</span>
+                  <span className={styles.brandTitleMain}> 创新赋能助手</span>
+                </span>
+              ) : (
+                selectedAgent.name
+              )
+            }
+            description={
+              isBrandMode ? BRAND.description : selectedAgent.description
+            }
             classNames={{
-              root: styles.welcome,
+              root: `${styles.welcome} ${isBrandMode ? styles.welcomeBrand : ''}`,
               icon: styles.welcomeIcon,
-              title: styles.welcomeTitle,
+              title: isBrandMode ? styles.welcomeTitleBrand : styles.welcomeTitle,
               description: styles.welcomeDescription,
             }}
           />
@@ -142,7 +183,7 @@ export default function HomePage() {
             aria-label="选择智能体"
           >
             {agents.map((agent, index) => {
-              const selected = agent.key === selectedAgent.key;
+              const selected = agent.key === selectedKey;
               return (
                 <motion.div
                   key={agent.key}
@@ -192,9 +233,10 @@ export default function HomePage() {
             <Sender
               ref={senderRef}
               value={value}
-              autoSize={{ minRows: 2, maxRows: 6 }}
+              // minRows / maxRows：控制默认行数与最高可长到几行
+              autoSize={{ minRows: 3, maxRows: 8 }}
               submitType="enter"
-              placeholder={selectedAgent.placeholder}
+              placeholder={activePlaceholder}
               onChange={setValue}
               onFocus={openRecommendations}
               onSubmit={submit}
@@ -206,15 +248,15 @@ export default function HomePage() {
               styles={{
                 content: {
                   alignItems: 'flex-start',
-                  paddingTop: 12,
-                  paddingBottom: 12,
+                  paddingTop: 14,
+                  paddingBottom: 14,
                 },
                 input: {
                   alignSelf: 'flex-start',
                   paddingTop: 0,
                   paddingBottom: 0,
-                  lineHeight: '24px',
-                  minHeight: 48,
+                  lineHeight: '26px',
+                  minHeight: 78,
                 },
               }}
               suffix={(_, { components }) => {
@@ -235,7 +277,7 @@ export default function HomePage() {
               {recommendationsOpen && (
                 <motion.section
                   className={styles.recommendationPanel}
-                  aria-label={`${selectedAgent.shortName}推荐问题`}
+                  aria-label={`${promptLabel}推荐问题`}
                   initial={
                     reduceMotion ? false : { height: 0, opacity: 0, y: -6 }
                   }
@@ -251,7 +293,7 @@ export default function HomePage() {
                   <div className={styles.recommendationHeader}>
                     <Typography.Text strong>推荐问题</Typography.Text>
                     <Typography.Text type="secondary">
-                      {selectedAgent.shortName}
+                      {promptLabel}
                     </Typography.Text>
                   </div>
                   <Prompts

@@ -75,6 +75,10 @@ function resolvePageTitle(pathname: string) {
     return '智能体中心';
   }
 
+  if (pathname === '/chat') {
+    return 'AI 创新赋能助手';
+  }
+
   if (pathname.startsWith('/chat/')) {
     const key = pathname.split('/')[2];
     return getAgent(key).name;

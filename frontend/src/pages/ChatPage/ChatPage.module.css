@@ -128,6 +128,36 @@
   border-radius: 999px;
 }
 
+.generalAvatar {
+  color: #ffffff !important;
+  background: linear-gradient(145deg, #4b7dff 0%, #2b5cff 55%, #5b47e0 100%) !important;
+  border-radius: 12px !important;
+}
+
+.generalWelcome {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  padding: 0 !important;
+  text-align: left !important;
+}
+
+.generalWelcomeTitle {
+  margin: 0 !important;
+  color: var(--text) !important;
+  font-size: 18px !important;
+  font-weight: 680 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.25 !important;
+}
+
+.generalWelcomeDescription {
+  margin-top: 6px !important;
+  color: var(--text-secondary) !important;
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+}
+
 .promptLabel {
   display: block;
   margin: 18px 0 10px;

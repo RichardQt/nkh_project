@@ -172,6 +172,30 @@ AGENTS: tuple[Agent, ...] = (
 
 AGENTS_BY_KEY: dict[str, Agent] = {agent.key: agent for agent in AGENTS}
 
+# General mode: no specialized agent selected on the home page.
+GENERAL_ASSISTANT = Agent(
+    key="general",
+    name="AI 创新赋能助手",
+    short_name="创新赋能",
+    description="综合回答创新与研发相关问题，不绑定单一智能体角色。",
+    greeting=(
+        "你好，我是 AI 创新赋能助手。你可以直接提问，"
+        "我会综合成果、专家、合作、拓客、需求与政策等方向给出建议。"
+    ),
+    prompts=(
+        "如何把一项实验室成果推向产业应用？",
+        "初创团队怎样找到合适的技术合作伙伴？",
+        "近期有哪些适合科技企业的支持政策方向？",
+    ),
+    system_prompt=(
+        "你是「AI 创新赋能助手」，面向科研、产业与创新决策场景。"
+        "用户未指定单一专业智能体，请以综合顾问身份回答。"
+        "可覆盖成果转化、专家协作、技术合作、客户拓展、需求研判、政策与科创资源等主题。"
+        "回答使用清晰、专业、可执行的中文；结构清楚，给出关键判断与下一步建议。"
+        "不确定时说明假设与边界，不要编造不可核验的精确数据或具体人名联系方式。"
+    ),
+)
+
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://101.226.11.38:25000/v1").rstrip("/")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen3.6-35B-A3B")
@@ -407,6 +431,9 @@ async def stream_chat(request: Request) -> StreamingResponse:
     Expected JSON body::
 
         {"agentKey": "achievement_match", "message": "你的问题"}
+        {"agentKey": null, "message": "你的问题"}          # general mode
+        {"agentKey": "general", "message": "你的问题"}     # general mode
+        {"message": "你的问题"}                            # general mode
 
     Events are ``meta``, repeated ``delta`` records, and finally ``done``.
     """
@@ -422,14 +449,18 @@ async def stream_chat(request: Request) -> StreamingResponse:
     agent_key = body.get("agentKey")
     message = body.get("message")
 
-    if not isinstance(agent_key, str) or agent_key not in AGENTS_BY_KEY:
-        raise HTTPException(status_code=422, detail="请选择有效的智能体")
     if not isinstance(message, str) or not message.strip():
         raise HTTPException(status_code=422, detail="请输入问题")
     if len(message) > 4_000:
         raise HTTPException(status_code=422, detail="问题长度不能超过 4000 个字符")
 
-    agent = AGENTS_BY_KEY[agent_key]
+    # No agent / explicit general → answer without binding a specialist agent.
+    if agent_key in (None, "", "general"):
+        agent = GENERAL_ASSISTANT
+    elif isinstance(agent_key, str) and agent_key in AGENTS_BY_KEY:
+        agent = AGENTS_BY_KEY[agent_key]
+    else:
+        raise HTTPException(status_code=422, detail="请选择有效的智能体")
 
     return StreamingResponse(
         _stream_model_reply(agent, message, request),

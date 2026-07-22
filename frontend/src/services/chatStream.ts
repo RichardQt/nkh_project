@@ -1,7 +1,10 @@
 import type { AgentKey } from '../types/agent';
 
+/** null / undefined / 'general' = home brand mode, no specialist agent. */
+export type ChatAgentKey = AgentKey | 'general' | null | undefined;
+
 interface ChatStreamInput {
-  agentKey: AgentKey;
+  agentKey?: ChatAgentKey;
   message: string;
 }
 
@@ -56,6 +59,13 @@ function extractContent(data: string): string | null {
   }
 }
 
+function normalizeAgentKey(agentKey: ChatAgentKey): string | null {
+  if (agentKey == null || agentKey === 'general') {
+    return null;
+  }
+  return agentKey;
+}
+
 /**
  * Stream chat tokens from the FastAPI SSE endpoint.
  * Uses fetch + ReadableStream so custom `event: delta` frames are reliable.
@@ -91,7 +101,10 @@ export function startChatStream(
           Accept: 'text/event-stream',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          message: input.message,
+          agentKey: normalizeAgentKey(input.agentKey),
+        }),
         signal: controller.signal,
       });
 
@@ -146,7 +159,6 @@ export function startChatStream(
         }
       }
 
-      // Stream closed without explicit done — still treat as complete.
       settleSuccess();
     } catch (error) {
       if (controller.signal.aborted) {
