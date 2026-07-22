@@ -1,0 +1,27 @@
+.glyph {
+  color: #2458d6 !important;
+  background: #eaf0ff !important;
+  border: 1px solid #d3dfff;
+}
+
+.small {
+  font-size: 12px !important;
+  border-radius: 6px !important;
+}
+
+.medium {
+  font-size: 19px !important;
+  border-radius: 10px !important;
+}
+
+.large {
+  font-size: 21px !important;
+  border-radius: 12px !important;
+}
+
+.active {
+  color: #ffffff !important;
+  background: #356df3 !important;
+  border-color: #356df3 !important;
+}
+

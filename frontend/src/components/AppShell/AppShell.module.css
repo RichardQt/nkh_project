@@ -1,0 +1,178 @@
+.appLayout {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--canvas);
+}
+
+.desktopSider {
+  position: fixed !important;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+
+.sidebarPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 18px 16px 16px;
+  background: var(--surface);
+}
+
+.brand {
+  display: flex !important;
+  width: 100%;
+  height: 42px !important;
+  padding: 0 !important;
+  justify-content: flex-start !important;
+  border-radius: 8px !important;
+}
+
+.brandMark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  color: #ffffff;
+  font-size: 16px;
+  background: var(--primary);
+  border: 1px solid #2b60df;
+  border-radius: 8px;
+}
+
+.brandText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.1;
+}
+
+.brandText :global(.ant-typography:first-child) {
+  color: #0f48b8;
+  font-size: 15px;
+}
+
+.brandText :global(.ant-typography:last-child) {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.newChatButton {
+  height: 44px !important;
+  box-shadow: none !important;
+}
+
+.navButton {
+  position: relative;
+  height: 42px !important;
+  justify-content: flex-start !important;
+  color: #434654 !important;
+}
+
+.navButton::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: -16px;
+  width: 3px;
+  content: '';
+  background: transparent;
+  border-radius: 0 3px 3px 0;
+  transition: background-color 180ms ease;
+}
+
+.navButtonActive {
+  color: #174dbd !important;
+  background: #eef3ff !important;
+}
+
+.navButtonActive::before {
+  background: var(--primary);
+}
+
+.sidebarDivider {
+  margin: 22px 0 0 !important;
+  border-color: var(--border-soft) !important;
+}
+
+.sidebarBlank {
+  flex: 1;
+}
+
+.mainLayout {
+  min-width: 0;
+  height: 100vh;
+  height: 100dvh;
+  margin-left: var(--sidebar-width);
+  background: var(--canvas);
+}
+
+.topbar {
+  z-index: 10;
+  display: flex;
+  height: var(--topbar-height);
+  padding: 0 28px !important;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  line-height: normal !important;
+}
+
+.pageTitle {
+  margin: 0 !important;
+  color: var(--text) !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+}
+
+.mobileMenuButton {
+  display: none !important;
+}
+
+.content {
+  min-height: 0;
+  height: calc(100vh - var(--topbar-height));
+  height: calc(100dvh - var(--topbar-height));
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+.routeFrame {
+  width: 100%;
+  height: 100%;
+}
+
+.mobileDrawer :global(.ant-drawer-body) {
+  height: 100%;
+}
+
+@media (max-width: 900px) {
+  .desktopSider {
+    display: none;
+  }
+
+  .mainLayout {
+    margin-left: 0;
+  }
+
+  .mobileMenuButton {
+    display: inline-flex !important;
+  }
+
+  .topbar {
+    padding: 0 16px !important;
+  }
+}
