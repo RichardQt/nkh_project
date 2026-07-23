@@ -17,14 +17,13 @@
 
 没有引入 Kumo UI、shadcn、Tailwind、额外状态库或请求库。
 
-### 后端
+### 后端（Backend A）
 
-- FastAPI
-- Uvicorn
-- httpx：调用 OpenAI 兼容的 Chat Completions 流式接口
-- python-dotenv：从 `backend/.env` 读取模型配置
-
-后端将前端的 `/api/chat/stream` 请求转发到配置的模型服务，密钥只保存在服务端 `.env`，前端不暴露 API Key 与模型供应商细节。
+- FastAPI + Uvicorn + httpx
+- 前端只调 Backend A：`POST /api/chat/stream`
+- Backend A 再调 Backend B 的 SSE：`POST {BACKEND_B}/api/chat/stream`，JSON body：`query` / `session_id` / `function`
+- 上游事件：`token`（思维链）+ `related_entries`（列表）
+- 列表字段由 Backend A 配置投影（`ACHIEVEMENT_DISPLAY_FIELDS` 等），前端只渲染返回的字段
 
 ## 页面
 
@@ -46,12 +45,14 @@
 
 ## 本地启动
 
-先配置模型（可复制示例后填写）：
+先配置上游 Backend B 与字段投影（可复制示例后填写）：
 
 ```powershell
 cd D:\mynj\nkh_project\backend
 copy .env.example .env
-# 编辑 .env：LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
+# 编辑 .env：
+#   BACKEND_B_HOST / BACKEND_B_PORT  （或 BACKEND_B_BASE_URL）
+#   ACHIEVEMENT_DISPLAY_FIELDS=serial_no,achievement_name   # 仅渲染配置字段
 ```
 
 再启动后端：
@@ -79,24 +80,39 @@ npm run dev
 
 访问 `http://127.0.0.1:5173/`。
 
-## 接口
+## 接口（Backend A）
 
 - `GET /api/health`
-- `GET /api/agents`
-- `POST /api/chat/stream`
-
-智能体展示文案目前由前端静态定义，以保证模板原型无需等待接口即可渲染；`GET /api/agents` 作为后续改为后端单一数据源时的预留接口。
+- `GET /api/functions`：查看 function 映射与当前字段投影
+- `POST /api/chat/stream`：SSE 代理
 
 流式请求示例：
 
 ```json
 {
-  "agentKey": "achievement_match",
-  "message": "如何提升材料耐久性？"
+  "agentKey": "achievement_discover",
+  "message": "自凝胶止血粉你了解么",
+  "sessionId": "1"
 }
 ```
 
-SSE 依次返回 `meta`、多个 `delta` 和 `done` 事件。
+SSE 依次返回：
+
+1. `meta`：sessionId / function / fields（字段元数据）
+2. 多个 `token`：思维链文本（前端 `Think` 组件）
+3. `related_entries`：投影后的列表（前端 Ant Design `List`）
+4. `done`
+
+场景 `agentKey` → Backend B `function` 映射示例：
+
+| agentKey | function |
+|----------|----------|
+| achievement_discover | achievements |
+| expert_discover | experts |
+| demand_discover | demands |
+| enterprise_discover | enterprises |
+| platform_discover | platforms |
+| policy_recommend | policies |
 
 ## 构建验证
 

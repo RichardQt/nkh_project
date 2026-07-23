@@ -6,15 +6,10 @@ import {
   useState,
 } from 'react';
 import type { ComponentRef } from 'react';
-import { RedoOutlined, RobotOutlined } from '@ant-design/icons';
-import { Actions, Bubble, Sender, ThoughtChain, Welcome } from '@ant-design/x';
-import type {
-  BubbleItemType,
-  BubbleListProps,
-  ThoughtChainProps,
-} from '@ant-design/x';
-import { XMarkdown } from '@ant-design/x-markdown';
-import { Avatar, Typography } from 'antd';
+import { RedoOutlined, RobotOutlined, SyncOutlined } from '@ant-design/icons';
+import { Actions, Bubble, Sender, Think, Welcome } from '@ant-design/x';
+import type { BubbleItemType, BubbleListProps } from '@ant-design/x';
+import { Avatar, Empty, List, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { getAgent } from '../../data/agents';
@@ -23,7 +18,13 @@ import {
   type ChatStreamController,
 } from '../../services/chatStream';
 import type { AgentKey } from '../../types/agent';
-import type { ChatMessage, ChatMessageStatus } from '../../types/chat';
+import type {
+  ChatMessage,
+  ChatMessageStatus,
+  DisplayField,
+  RelatedEntriesPayload,
+  RelatedEntryRow,
+} from '../../types/chat';
 import styles from './ChatPage.module.css';
 
 interface ChatLocationState {
@@ -54,37 +55,169 @@ function pendingStorageKey(sessionKey: string) {
   return `nkh:pending-question:${sessionKey}`;
 }
 
-function createThoughtItems(
-  status: ChatMessageStatus,
-): ThoughtChainProps['items'] {
-  const terminalStatus =
-    status === 'error' ? 'error' : status === 'abort' ? 'abort' : 'success';
+function sessionIdStorageKey(sessionKey: string) {
+  return `nkh:session-id:${sessionKey}`;
+}
 
-  return [
-    {
-      key: 'request',
-      title: '请求服务',
-      description: '调用后端接口处理问题',
-      status: status === 'loading' ? 'loading' : terminalStatus,
-      collapsible: true,
-    },
-    {
-      key: 'stream',
-      title: '整理结果',
-      description: '流式返回并展示回答',
-      status:
-        status === 'loading' || status === 'updating'
-          ? 'loading'
-          : terminalStatus,
-      collapsible: true,
-    },
-  ];
+function ensureSessionId(sessionKey: string): string {
+  const key = sessionIdStorageKey(sessionKey);
+  const existing = sessionStorage.getItem(key)?.trim();
+  if (existing) {
+    return existing;
+  }
+  const next =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  sessionStorage.setItem(key, next);
+  return next;
+}
+
+function formatCellValue(value: RelatedEntryRow[string]): string {
+  if (value == null || value === '') {
+    return '-';
+  }
+  if (typeof value === 'boolean') {
+    return value ? '是' : '否';
+  }
+  return String(value);
+}
+
+function RelatedEntriesList({
+  payload,
+}: {
+  payload: RelatedEntriesPayload;
+}) {
+  const fields = payload.fields;
+  const items = payload.items;
+
+  if (!items.length) {
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="暂无相关条目"
+        className={styles.entriesEmpty}
+      />
+    );
+  }
+
+  const titleField = fields[0];
+  const detailFields = fields.slice(1);
+
+  return (
+    <div className={styles.entriesPanel}>
+      <Typography.Text className={styles.entriesTitle}>
+        相关结果
+        <span className={styles.entriesCount}>{items.length}</span>
+      </Typography.Text>
+      <List
+        className={styles.entriesList}
+        itemLayout="vertical"
+        dataSource={items}
+        split
+        renderItem={(item, index) => {
+          const titleText = titleField
+            ? formatCellValue(item[titleField.key])
+            : `条目 ${index + 1}`;
+
+          return (
+            <List.Item key={`${index}-${titleText}`} className={styles.entryItem}>
+              <div className={styles.entryHead}>
+                <Typography.Text strong className={styles.entryTitle}>
+                  {titleText}
+                </Typography.Text>
+              </div>
+              {detailFields.length > 0 ? (
+                <dl className={styles.entryFields}>
+                  {detailFields.map((field: DisplayField) => (
+                    <div key={field.key} className={styles.entryFieldRow}>
+                      <dt>{field.label}</dt>
+                      <dd>{formatCellValue(item[field.key])}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </List.Item>
+          );
+        }}
+      />
+    </div>
+  );
+}
+
+function AnswerBody({
+  message,
+  reduceMotion,
+}: {
+  message: ChatMessage;
+  reduceMotion: boolean | null;
+}) {
+  const status = message.status;
+  const thinking = Boolean(message.thinkContent);
+  const isStreaming =
+    status === 'loading' || status === 'updating';
+  const thinkLoading = isStreaming && !message.relatedEntries;
+
+  const thinkTitle = thinkLoading
+    ? '正在思考'
+    : thinking
+      ? '思考过程'
+      : status === 'error'
+        ? '处理失败'
+        : status === 'abort'
+          ? '已停止'
+          : '思考过程';
+
+  const showThink = thinking || isStreaming || status === 'error' || status === 'abort';
+
+  return (
+    <div className={styles.answerContent}>
+      {showThink ? (
+        <Think
+          title={thinkTitle}
+          blink={!reduceMotion && thinkLoading}
+          loading={
+            thinkLoading ? (
+              <SyncOutlined className={styles.thinkSpin} />
+            ) : (
+              false
+            )
+          }
+          defaultExpanded
+          rootClassName={styles.thinkRoot}
+        >
+          {message.thinkContent ||
+            (status === 'loading'
+              ? '正在连接服务…'
+              : status === 'error'
+                ? message.content || '请求失败'
+                : status === 'abort'
+                  ? message.content || '已停止生成。'
+                  : '')}
+        </Think>
+      ) : null}
+
+      {message.relatedEntries ? (
+        <RelatedEntriesList payload={message.relatedEntries} />
+      ) : null}
+
+      {!message.relatedEntries &&
+      !message.thinkContent &&
+      message.content &&
+      (status === 'error' || status === 'abort' || status === 'success') ? (
+        <Typography.Paragraph className={styles.fallbackText}>
+          {message.content}
+        </Typography.Paragraph>
+      ) : null}
+    </div>
+  );
 }
 
 export default function ChatPage({ agentKey }: ChatPageProps) {
   const scene = agentKey ? getAgent(agentKey) : null;
   const sessionKey = agentKey ?? 'general';
   const displayName = scene ? `${CHAT_UI.name} · ${scene.label}` : CHAT_UI.name;
+  const sessionIdRef = useRef(ensureSessionId(sessionKey));
 
   const location = useLocation();
   const reduceMotion = useReducedMotion();
@@ -182,6 +315,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           id: answerId,
           role: 'assistant',
           content: '',
+          thinkContent: '',
           status: 'loading',
           kind: 'answer',
           sourceQuestion: question,
@@ -190,12 +324,24 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
 
       requestRef.current = startChatStream(
         {
-          // 场景 key 仅透传给后端 A，不再绑定智能体人设
-          agentKey: agentKey,
+          agentKey,
           message: question,
+          sessionId: sessionIdRef.current,
         },
         {
-          onDelta: (content) => {
+          onMeta: ({ fields }) => {
+            if (activeAnswerRef.current !== answerId || !fields?.length) {
+              return;
+            }
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === answerId
+                  ? { ...message, displayFields: fields }
+                  : message,
+              ),
+            );
+          },
+          onToken: (content) => {
             if (activeAnswerRef.current !== answerId) {
               return;
             }
@@ -205,7 +351,27 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 message.id === answerId
                   ? {
                       ...message,
-                      content: `${message.content}${content}`,
+                      thinkContent: `${message.thinkContent ?? ''}${content}`,
+                      status: 'updating',
+                    }
+                  : message,
+              ),
+            );
+          },
+          onRelatedEntries: (payload) => {
+            if (activeAnswerRef.current !== answerId) {
+              return;
+            }
+
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === answerId
+                  ? {
+                      ...message,
+                      relatedEntries: payload,
+                      displayFields: payload.fields.length
+                        ? payload.fields
+                        : message.displayFields,
                       status: 'updating',
                     }
                   : message,
@@ -222,17 +388,22 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             setRequesting(false);
             sessionStorage.removeItem(pendingStorageKey(sessionKey));
             setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      status: 'success',
-                      content:
-                        message.content ||
-                        '回答已完成，但暂时没有可展示的内容。',
-                    }
-                  : message,
-              ),
+              current.map((message) => {
+                if (message.id !== answerId) {
+                  return message;
+                }
+                const hasPayload =
+                  Boolean(message.thinkContent?.trim()) ||
+                  (message.relatedEntries?.items.length ?? 0) > 0;
+                return {
+                  ...message,
+                  status: 'success',
+                  content: hasPayload
+                    ? message.content
+                    : message.content ||
+                      '回答已完成，但暂时没有可展示的内容。',
+                };
+              }),
             );
           },
           onError: (error) => {
@@ -385,36 +556,22 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           body: styles.assistantBubbleBody,
           content: styles.assistantBubbleContent,
         },
-        contentRender: (content, info) => {
+        contentRender: (_content, info) => {
           const status = (info.status ?? 'success') as ChatMessageStatus;
           const kind = info.extraInfo?.kind;
+          const message = info.extraInfo?.message as ChatMessage | undefined;
+
+          if (kind === 'answer' && message) {
+            return (
+              <AnswerBody message={{ ...message, status }} reduceMotion={reduceMotion} />
+            );
+          }
 
           return (
             <div className={styles.answerContent}>
-              {kind === 'answer' && (
-                <ThoughtChain
-                  items={createThoughtItems(status)}
-                  defaultExpandedKeys={[]}
-                  line="solid"
-                  rootClassName={styles.thoughtChain}
-                />
-              )}
-              {String(content ?? '') ? (
-                <XMarkdown
-                  rootClassName={styles.markdown}
-                  content={String(content)}
-                  openLinksInNewTab
-                  streaming={{
-                    hasNextChunk: status === 'loading' || status === 'updating',
-                    enableAnimation: !reduceMotion,
-                    animationConfig: {
-                      fadeDuration: 160,
-                      easing: 'ease-out',
-                    },
-                    tail: status === 'updating',
-                  }}
-                />
-              ) : null}
+              <Typography.Paragraph className={styles.fallbackText}>
+                {String(_content ?? '')}
+              </Typography.Paragraph>
             </div>
           );
         },
@@ -437,14 +594,30 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         const isCompletedAnswer =
           message.kind === 'answer' && message.status === 'success';
 
+        const copyText = [
+          message.thinkContent,
+          message.relatedEntries?.items
+            .map((row, i) => {
+              const fields = message.relatedEntries?.fields ?? [];
+              const lines = fields.map(
+                (f) => `${f.label}: ${formatCellValue(row[f.key])}`,
+              );
+              return [`#${i + 1}`, ...lines].join('\n');
+            })
+            .join('\n\n'),
+          message.content,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+
         const baseItem: BubbleItemType = {
           key: message.id,
           role: message.role,
           content: message.content,
           status: message.status,
-          loading: message.status === 'loading',
+          loading: false,
           streaming: message.status === 'updating',
-          extraInfo: { kind: message.kind },
+          extraInfo: { kind: message.kind, message },
         };
 
         if (isIntro) {
@@ -477,7 +650,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 {
                   key: 'copy',
                   actionRender: (
-                    <Actions.Copy text={message.content} aria-label="复制回答" />
+                    <Actions.Copy text={copyText} aria-label="复制回答" />
                   ),
                 },
                 {
