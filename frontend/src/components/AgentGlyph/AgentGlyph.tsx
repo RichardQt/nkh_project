@@ -2,10 +2,12 @@ import {
   AimOutlined,
   BankOutlined,
   ClusterOutlined,
+  CompassOutlined,
   DatabaseOutlined,
+  ExperimentOutlined,
   LineChartOutlined,
+  ShopOutlined,
   SolutionOutlined,
-  TeamOutlined,
   UserSwitchOutlined,
 } from '@ant-design/icons';
 import { Avatar } from 'antd';
@@ -19,13 +21,14 @@ interface AgentGlyphProps {
 }
 
 const glyphs = {
-  achievement_match: ClusterOutlined,
-  expert_recommend: UserSwitchOutlined,
-  tech_partner: TeamOutlined,
-  precision_growth: AimOutlined,
-  demand_forecast: LineChartOutlined,
-  policy_service: BankOutlined,
-  innovation_resources: DatabaseOutlined,
+  policy_recommend: BankOutlined,
+  achievement_eval: ExperimentOutlined,
+  research_direction: CompassOutlined,
+  achievement_discover: ClusterOutlined,
+  expert_discover: UserSwitchOutlined,
+  demand_discover: LineChartOutlined,
+  enterprise_discover: ShopOutlined,
+  platform_discover: DatabaseOutlined,
 } satisfies Record<AgentKey, typeof SolutionOutlined>;
 
 const sizes = {
@@ -39,7 +42,7 @@ export default function AgentGlyph({
   size = 'medium',
   active = false,
 }: AgentGlyphProps) {
-  const Glyph = glyphs[agentKey];
+  const Glyph = glyphs[agentKey] ?? AimOutlined;
 
   return (
     <Avatar

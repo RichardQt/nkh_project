@@ -1,19 +1,17 @@
+/** 首页能力入口 key（仅作场景标识，不再是智能体人设）。 */
 export type AgentKey =
-  | 'achievement_match'
-  | 'expert_recommend'
-  | 'tech_partner'
-  | 'precision_growth'
-  | 'demand_forecast'
-  | 'policy_service'
-  | 'innovation_resources';
+  | 'policy_recommend'
+  | 'achievement_eval'
+  | 'research_direction'
+  | 'achievement_discover'
+  | 'expert_discover'
+  | 'demand_discover'
+  | 'enterprise_discover'
+  | 'platform_discover';
 
+/** 导航项：只保留界面展示所需字段。 */
 export interface AgentDefinition {
   key: AgentKey;
-  shortName: string;
-  name: string;
-  description: string;
-  detail: string;
-  placeholder: string;
-  greeting: string;
-  prompts: readonly string[];
+  /** 按钮文案，如「政策推荐」 */
+  label: string;
 }

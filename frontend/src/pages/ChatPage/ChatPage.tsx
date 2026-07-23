@@ -6,30 +6,17 @@ import {
   useState,
 } from 'react';
 import type { ComponentRef } from 'react';
-import {
-  RedoOutlined,
-  RobotOutlined,
-  SearchOutlined,
-} from '@ant-design/icons';
-import {
-  Actions,
-  Bubble,
-  Prompts,
-  Sender,
-  ThoughtChain,
-  Welcome,
-} from '@ant-design/x';
+import { RedoOutlined, RobotOutlined } from '@ant-design/icons';
+import { Actions, Bubble, Sender, ThoughtChain, Welcome } from '@ant-design/x';
 import type {
   BubbleItemType,
   BubbleListProps,
-  PromptsProps,
   ThoughtChainProps,
 } from '@ant-design/x';
 import { XMarkdown } from '@ant-design/x-markdown';
-import { Avatar, Button, Typography } from 'antd';
+import { Avatar, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
-import AgentGlyph from '../../components/AgentGlyph/AgentGlyph';
 import { getAgent } from '../../data/agents';
 import {
   startChatStream,
@@ -44,22 +31,14 @@ interface ChatLocationState {
 }
 
 interface ChatPageProps {
-  /** Specialist agent key, or null for general “AI 创新赋能助手” mode. */
+  /** 首页选中的能力入口 key；null 表示未选场景。 */
   agentKey: AgentKey | null;
 }
 
-const GENERAL_CHAT = {
-  sessionKey: 'general',
+const CHAT_UI = {
   name: 'AI 创新赋能助手',
-  shortName: '创新赋能',
-  greeting:
-    '你好，我是 AI 创新赋能助手。你可以直接提问，我会综合成果、专家、合作、拓客、需求与政策等方向给出建议。',
-  placeholder: '描述你的创新问题或目标，Enter 发送，Shift + Enter 换行',
-  prompts: [
-    '如何把一项实验室成果推向产业应用？',
-    '初创团队怎样找到合适的技术合作伙伴？',
-    '近期有哪些适合科技企业的支持政策方向？',
-  ],
+  greeting: '你好，请直接输入问题。系统将调用服务接口为你返回结果。',
+  placeholder: '描述你的问题或目标，Enter 发送，Shift + Enter 换行',
 } as const;
 
 function readEntryQuestion(search: string, state: unknown): string {
@@ -77,27 +56,22 @@ function pendingStorageKey(sessionKey: string) {
 
 function createThoughtItems(
   status: ChatMessageStatus,
-  general: boolean,
 ): ThoughtChainProps['items'] {
   const terminalStatus =
     status === 'error' ? 'error' : status === 'abort' ? 'abort' : 'success';
 
   return [
     {
-      key: 'retrieve',
-      title: general ? '理解问题与目标' : '检索相关科技资料',
-      description: general
-        ? '梳理问题边界、可用信息与回答重点'
-        : '匹配当前智能体的专业知识与任务线索',
+      key: 'request',
+      title: '请求服务',
+      description: '调用后端接口处理问题',
       status: status === 'loading' ? 'loading' : terminalStatus,
       collapsible: true,
     },
     {
-      key: 'organize',
-      title: general ? '组织综合建议' : '组织关键结论',
-      description: general
-        ? '形成可执行的分析、建议与下一步动作'
-        : '将信息整理为可执行的分析与建议',
+      key: 'stream',
+      title: '整理结果',
+      description: '流式返回并展示回答',
       status:
         status === 'loading' || status === 'updating'
           ? 'loading'
@@ -108,14 +82,9 @@ function createThoughtItems(
 }
 
 export default function ChatPage({ agentKey }: ChatPageProps) {
-  const isGeneral = agentKey == null;
-  const agent = isGeneral ? null : getAgent(agentKey);
-  const sessionKey = isGeneral ? GENERAL_CHAT.sessionKey : agent!.key;
-  const displayName = isGeneral ? GENERAL_CHAT.name : agent!.name;
-  const shortName = isGeneral ? GENERAL_CHAT.shortName : agent!.shortName;
-  const greeting = isGeneral ? GENERAL_CHAT.greeting : agent!.greeting;
-  const placeholder = isGeneral ? GENERAL_CHAT.placeholder : agent!.placeholder;
-  const prompts = isGeneral ? GENERAL_CHAT.prompts : agent!.prompts;
+  const scene = agentKey ? getAgent(agentKey) : null;
+  const sessionKey = agentKey ?? 'general';
+  const displayName = scene ? `${CHAT_UI.name} · ${scene.label}` : CHAT_UI.name;
 
   const location = useLocation();
   const reduceMotion = useReducedMotion();
@@ -125,7 +94,9 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     {
       id: `intro-${sessionKey}`,
       role: 'assistant',
-      content: greeting,
+      content: scene
+        ? `当前场景：${scene.label}。${CHAT_UI.greeting}`
+        : CHAT_UI.greeting,
       status: 'success',
       kind: 'intro',
     },
@@ -219,8 +190,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
 
       requestRef.current = startChatStream(
         {
-          // General mode intentionally omits specialist agent binding.
-          agentKey: isGeneral ? null : agentKey,
+          // 场景 key 仅透传给后端 A，不再绑定智能体人设
+          agentKey: agentKey,
           message: question,
         },
         {
@@ -285,7 +256,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                         error.name === 'AbortError'
                           ? message.content || '已停止生成。'
                           : error.message ||
-                            '暂时无法连接智能服务，请确认 FastAPI 服务已启动后重试。',
+                            '暂时无法连接服务，请确认后端已启动后重试。',
                     }
                   : message,
               ),
@@ -296,7 +267,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
 
       return true;
     },
-    [agentKey, isGeneral, nextMessageId, sessionKey, setRequesting],
+    [agentKey, nextMessageId, sessionKey, setRequesting],
   );
 
   useEffect(() => {
@@ -390,42 +361,16 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [messages, reduceMotion]);
 
-  const introPrompts: PromptsProps['items'] = useMemo(
-    () =>
-      prompts.slice(0, 3).map((prompt) => ({
-        key: prompt,
-        icon: <SearchOutlined />,
-        label: (
-          <Button
-            type="text"
-            block
-            disabled={isRequesting}
-            className={styles.introPromptAction}
-            onClick={(event) => {
-              event.stopPropagation();
-              submit(prompt);
-            }}
-          >
-            {prompt}
-          </Button>
-        ),
-      })),
-    [isRequesting, prompts, submit],
-  );
-
   const assistantAvatar = useMemo(
-    () =>
-      isGeneral ? (
-        <Avatar
-          shape="square"
-          size={42}
-          icon={<RobotOutlined />}
-          className={styles.generalAvatar}
-        />
-      ) : (
-        <AgentGlyph agentKey={agentKey!} size="medium" active />
-      ),
-    [agentKey, isGeneral],
+    () => (
+      <Avatar
+        shape="square"
+        size={42}
+        icon={<RobotOutlined />}
+        className={styles.generalAvatar}
+      />
+    ),
+    [],
   );
 
   const roleConfig: BubbleListProps['role'] = useMemo(
@@ -448,7 +393,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             <div className={styles.answerContent}>
               {kind === 'answer' && (
                 <ThoughtChain
-                  items={createThoughtItems(status, isGeneral)}
+                  items={createThoughtItems(status)}
                   defaultExpandedKeys={[]}
                   line="solid"
                   rootClassName={styles.thoughtChain}
@@ -482,7 +427,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         classNames: { content: styles.userBubbleContent },
       },
     }),
-    [assistantAvatar, isGeneral, reduceMotion],
+    [assistantAvatar, reduceMotion],
   );
 
   const bubbleItems: BubbleItemType[] = useMemo(
@@ -507,44 +452,15 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             ...baseItem,
             contentRender: () => (
               <div className={styles.introContent}>
-                {isGeneral ? (
-                  <Welcome
-                    variant="borderless"
-                    title={displayName}
-                    description={message.content}
-                    classNames={{
-                      root: styles.generalWelcome,
-                      title: styles.generalWelcomeTitle,
-                      description: styles.generalWelcomeDescription,
-                    }}
-                  />
-                ) : (
-                  <div className={styles.introStage}>
-                    <AgentGlyph agentKey={agentKey!} size="medium" active />
-                    <div className={styles.introCopy}>
-                      <Typography.Text className={styles.introEyebrow}>
-                        {shortName}
-                      </Typography.Text>
-                      <XMarkdown
-                        rootClassName={styles.markdown}
-                        content={message.content}
-                      />
-                    </div>
-                  </div>
-                )}
-                <Typography.Text className={styles.promptLabel}>
-                  你可以从这些问题开始
-                </Typography.Text>
-                <Prompts
-                  items={introPrompts}
-                  wrap
-                  fadeIn={!reduceMotion}
+                <Welcome
+                  variant="borderless"
+                  title={displayName}
+                  description={message.content}
                   classNames={{
-                    root: styles.introPrompts,
-                    item: styles.introPromptItem,
-                    itemContent: styles.introPromptContent,
+                    root: styles.generalWelcome,
+                    title: styles.generalWelcomeTitle,
+                    description: styles.generalWelcomeDescription,
                   }}
-                  onItemClick={({ data }) => submit(data.key)}
                 />
               </div>
             ),
@@ -579,16 +495,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           ) : undefined,
         };
       }),
-    [
-      agentKey,
-      displayName,
-      introPrompts,
-      isGeneral,
-      messages,
-      reduceMotion,
-      shortName,
-      submit,
-    ],
+    [displayName, messages, submit],
   );
 
   return (
@@ -611,7 +518,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             loading={isRequesting}
             autoSize={{ minRows: 1, maxRows: 6 }}
             submitType="enter"
-            placeholder={placeholder}
+            placeholder={CHAT_UI.placeholder}
             onChange={setValue}
             onSubmit={(next) => {
               submit(next);

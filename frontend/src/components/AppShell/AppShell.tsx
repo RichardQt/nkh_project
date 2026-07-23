@@ -1,18 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
-  AppstoreOutlined,
   MenuOutlined,
   PlusOutlined,
   RobotOutlined,
 } from '@ant-design/icons';
-import { Button, Divider, Drawer, Layout, Space, Typography } from 'antd';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { Button, Divider, Drawer, Layout, Typography } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { getAgent } from '../../data/agents';
-import { tweenUi } from '../../motion/tokens';
 import styles from './AppShell.module.css';
 
-const { Content, Header, Sider } = Layout;
+const { Content, Sider } = Layout;
 
 interface SidebarPanelProps {
   activePath: string;
@@ -20,8 +16,7 @@ interface SidebarPanelProps {
 }
 
 function SidebarPanel({ activePath, onNavigate }: SidebarPanelProps) {
-  const centerActive = activePath.startsWith('/agents');
-  const newChatActive = activePath === '/' || activePath.startsWith('/chat/');
+  const newChatActive = activePath === '/' || activePath.startsWith('/chat');
 
   return (
     <div className={styles.sidebarPanel}>
@@ -52,16 +47,6 @@ function SidebarPanel({ activePath, onNavigate }: SidebarPanelProps) {
         >
           新建对话
         </Button>
-
-        <Button
-          type="text"
-          icon={<AppstoreOutlined />}
-          block
-          className={`${styles.navButton} ${centerActive ? styles.navButtonActive : ''}`}
-          onClick={() => onNavigate('/agents')}
-        >
-          智能体中心
-        </Button>
       </nav>
 
       <Divider className={styles.sidebarDivider} />
@@ -70,40 +55,19 @@ function SidebarPanel({ activePath, onNavigate }: SidebarPanelProps) {
   );
 }
 
-function resolvePageTitle(pathname: string) {
-  if (pathname === '/agents') {
-    return '智能体中心';
-  }
-
-  if (pathname === '/chat') {
-    return 'AI 创新赋能助手';
-  }
-
-  if (pathname.startsWith('/chat/')) {
-    const key = pathname.split('/')[2];
-    return getAgent(key).name;
-  }
-
-  return 'AI 助手';
-}
-
 export default function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const reduceMotion = useReducedMotion();
-  const title = useMemo(
-    () => resolvePageTitle(location.pathname),
-    [location.pathname],
-  );
 
   const handleNavigate = (path: string) => {
     setDrawerOpen(false);
     navigate(path);
   };
 
-  // 首页不展示顶部导航条，内容区全高
-  const isHome = location.pathname === '/';
+  // 首页与对话页均不展示顶部导航条
+  const hideTopbar =
+    location.pathname === '/' || location.pathname.startsWith('/chat');
 
   return (
     <Layout className={styles.appLayout}>
@@ -130,37 +94,7 @@ export default function AppShell() {
       </Drawer>
 
       <Layout className={styles.mainLayout}>
-        {!isHome && (
-          <Header className={styles.topbar}>
-            <Space size={12} align="center">
-              <Button
-                type="text"
-                icon={<MenuOutlined />}
-                className={styles.mobileMenuButton}
-                onClick={() => setDrawerOpen(true)}
-                aria-label="打开主导航"
-              />
-              <div className={styles.titleBlock}>
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={title}
-                    className={styles.titleMotion}
-                    initial={reduceMotion ? false : { opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={reduceMotion ? undefined : { opacity: 0, y: -3 }}
-                    transition={reduceMotion ? { duration: 0 } : tweenUi}
-                  >
-                    <Typography.Title level={1} className={styles.pageTitle}>
-                      {title}
-                    </Typography.Title>
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            </Space>
-          </Header>
-        )}
-
-        {isHome && (
+        {hideTopbar && (
           <Button
             type="text"
             icon={<MenuOutlined />}
@@ -171,13 +105,8 @@ export default function AppShell() {
         )}
 
         <Content
-          className={`${styles.content} ${isHome ? styles.contentFullHeight : ''}`}
+          className={`${styles.content} ${hideTopbar ? styles.contentFullHeight : ''}`}
         >
-          {/*
-            Do NOT wrap <Outlet /> in AnimatePresence.
-            Presence + React Router Outlet frequently leaves a blank content pane
-            after query-string cleanup or route swaps.
-          */}
           <div className={styles.routeFrame}>
             <Outlet />
           </div>

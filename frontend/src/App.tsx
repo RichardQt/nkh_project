@@ -6,9 +6,6 @@ import AppShell from './components/AppShell/AppShell';
 import { isAgentKey } from './data/agents';
 
 const HomePage = lazy(() => import('./pages/HomePage/HomePage'));
-const AgentCenterPage = lazy(
-  () => import('./pages/AgentCenterPage/AgentCenterPage'),
-);
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
 
 function PageBoundary({ children }: { children: ReactNode }) {
@@ -25,8 +22,8 @@ function PageBoundary({ children }: { children: ReactNode }) {
   );
 }
 
-/** Specialist agent conversation: /chat/:agentKey */
-function AgentChatRoute() {
+/** 带场景 key 的对话：/chat/:agentKey */
+function SceneChatRoute() {
   const { agentKey } = useParams();
 
   if (!agentKey || !isAgentKey(agentKey)) {
@@ -40,7 +37,7 @@ function AgentChatRoute() {
   );
 }
 
-/** General conversation without a specialist agent: /chat */
+/** 未选场景的通用对话：/chat */
 function GeneralChatRoute() {
   return (
     <PageBoundary>
@@ -61,16 +58,10 @@ export default function App() {
             </PageBoundary>
           }
         />
-        <Route
-          path="agents"
-          element={
-            <PageBoundary>
-              <AgentCenterPage />
-            </PageBoundary>
-          }
-        />
+        {/* 旧智能体中心入口重定向首页 */}
+        <Route path="agents" element={<Navigate to="/" replace />} />
         <Route path="chat" element={<GeneralChatRoute />} />
-        <Route path="chat/:agentKey" element={<AgentChatRoute />} />
+        <Route path="chat/:agentKey" element={<SceneChatRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
