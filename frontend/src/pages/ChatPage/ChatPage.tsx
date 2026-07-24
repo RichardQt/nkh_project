@@ -6,10 +6,14 @@ import {
   useState,
 } from 'react';
 import type { ComponentRef } from 'react';
-import { RedoOutlined, RobotOutlined, SyncOutlined } from '@ant-design/icons';
-import { Actions, Bubble, Sender, Think, Welcome } from '@ant-design/x';
-import type { BubbleItemType, BubbleListProps } from '@ant-design/x';
-import { Avatar, Empty, List, Typography } from 'antd';
+import { RedoOutlined, RobotOutlined } from '@ant-design/icons';
+import { Actions, Bubble, Sender, ThoughtChain, Welcome } from '@ant-design/x';
+import type {
+  BubbleItemType,
+  BubbleListProps,
+  ThoughtChainProps,
+} from '@ant-design/x';
+import { Avatar, Drawer, Empty, List, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { getAgent } from '../../data/agents';
@@ -20,10 +24,15 @@ import {
 import type { AgentKey } from '../../types/agent';
 import type {
   ChatMessage,
+  ClarificationPayload,
   ChatMessageStatus,
+  ChatThoughtState,
   DisplayField,
   RelatedEntriesPayload,
+  RelatedEntriesSection,
   RelatedEntryRow,
+  ThoughtStepStatus,
+  WorkflowNodeEvent,
 } from '../../types/chat';
 import styles from './ChatPage.module.css';
 
@@ -83,15 +92,496 @@ function formatCellValue(value: RelatedEntryRow[string]): string {
   return String(value);
 }
 
+const INTENT_LABELS: Record<string, string> = {
+  achievements: '找成果',
+  requirements: '找需求',
+  expert_team: '找专家',
+  enterprises: '找企业',
+};
+
+function createThoughtState(): ChatThoughtState {
+  return {
+    intent: { status: 'loading' },
+    clarity: { status: 'pending' },
+    reasoning: { status: 'pending' },
+  };
+}
+
+function completePrecedingStep(status: ThoughtStepStatus): ThoughtStepStatus {
+  return status === 'pending' || status === 'loading' ? 'success' : status;
+}
+
+function startThoughtStep(status: ThoughtStepStatus): ThoughtStepStatus {
+  return status === 'pending' ? 'loading' : status;
+}
+
+// followup_check uses is_followup as the product contract; an explicit clarify event overrides it.
+function shouldAskFollowup(state: ChatThoughtState): boolean | undefined {
+  return (
+    state.clarity.clarificationRequested ??
+    state.clarity.isFollowup ??
+    state.clarity.needClarify
+  );
+}
+
+function requestClarification(
+  state: ChatThoughtState | undefined,
+  question?: string,
+  suggestedQuestions?: string[],
+): ChatThoughtState {
+  const current = state ?? createThoughtState();
+  const trimmedQuestion = question?.trim();
+
+  return {
+    intent: {
+      ...current.intent,
+      status: completePrecedingStep(current.intent.status),
+    },
+    clarity: {
+      ...current.clarity,
+      status: 'success',
+      needClarify: true,
+      clarificationRequested: true,
+      clarifyQuestion: trimmedQuestion || current.clarity.clarifyQuestion,
+      suggestedQuestions: suggestedQuestions?.length
+        ? suggestedQuestions
+        : current.clarity.suggestedQuestions,
+    },
+    reasoning:
+      current.reasoning.status === 'error' ||
+      current.reasoning.status === 'abort'
+        ? current.reasoning
+        : { status: 'pending' },
+  };
+}
+
+function updateThoughtNode(
+  state: ChatThoughtState | undefined,
+  event: WorkflowNodeEvent,
+  phase: 'start' | 'end',
+): ChatThoughtState {
+  const current = state ?? createThoughtState();
+
+  if (event.node === 'intent_classify') {
+    return {
+      ...current,
+      intent: {
+        ...current.intent,
+        status:
+          phase === 'start'
+            ? startThoughtStep(current.intent.status)
+            : 'success',
+        intent: event.intent ?? current.intent.intent,
+        categories: event.categories ?? current.intent.categories,
+      },
+    };
+  }
+
+  if (event.node === 'followup_check') {
+    const needClarify =
+      event.needClarify ?? current.clarity.needClarify;
+    const clarifyQuestion =
+      event.clarifyQuestion ?? current.clarity.clarifyQuestion;
+    const isFollowup = event.isFollowup ?? current.clarity.isFollowup;
+    const needsClarification = isFollowup ?? needClarify;
+
+    return {
+      ...current,
+      intent: {
+        ...current.intent,
+        status: completePrecedingStep(current.intent.status),
+      },
+      clarity: {
+        ...current.clarity,
+        status:
+          phase === 'start'
+            ? startThoughtStep(current.clarity.status)
+            : 'success',
+        needClarify,
+        clarifyQuestion,
+        isFollowup,
+      },
+      reasoning:
+        phase === 'end' &&
+        needsClarification === false &&
+        current.reasoning.status === 'pending'
+          ? { status: 'loading' }
+          : current.reasoning,
+    };
+  }
+
+  if (
+    event.node === 'clarify' &&
+    phase === 'end' &&
+    (event.needClarify === true || Boolean(event.clarifyQuestion?.trim()))
+  ) {
+    return requestClarification(current, event.clarifyQuestion);
+  }
+
+  return current;
+}
+
+function activateReasoning(
+  state: ChatThoughtState | undefined,
+): ChatThoughtState {
+  const current = state ?? createThoughtState();
+  return {
+    intent: {
+      ...current.intent,
+      status: completePrecedingStep(current.intent.status),
+    },
+    clarity: {
+      ...current.clarity,
+      status: completePrecedingStep(current.clarity.status),
+    },
+    reasoning: { status: 'loading' },
+  };
+}
+
+function completeThoughtState(
+  state: ChatThoughtState | undefined,
+  hasOutput: boolean,
+): ChatThoughtState {
+  const current = state ?? createThoughtState();
+  const needsClarification =
+    shouldAskFollowup(current) ?? false;
+  const reasoningStatus =
+    current.reasoning.status === 'loading' ||
+    (current.reasoning.status === 'pending' && hasOutput && !needsClarification)
+      ? 'success'
+      : current.reasoning.status;
+
+  return {
+    intent: {
+      ...current.intent,
+      status: completePrecedingStep(current.intent.status),
+    },
+    clarity: {
+      ...current.clarity,
+      status:
+        current.clarity.status === 'loading'
+          ? 'success'
+          : current.clarity.status,
+    },
+    reasoning: { status: reasoningStatus },
+  };
+}
+
+function stopThoughtState(
+  state: ChatThoughtState | undefined,
+  status: 'error' | 'abort',
+): ChatThoughtState {
+  const current = state ?? createThoughtState();
+
+  if (current.reasoning.status === 'loading') {
+    return { ...current, reasoning: { status } };
+  }
+  if (current.clarity.status === 'loading') {
+    return { ...current, clarity: { ...current.clarity, status } };
+  }
+  if (current.intent.status === 'loading') {
+    return { ...current, intent: { ...current.intent, status } };
+  }
+  if (
+    current.clarity.status === 'pending' &&
+    current.intent.status === 'success'
+  ) {
+    return { ...current, clarity: { ...current.clarity, status } };
+  }
+
+  const needsClarification =
+    shouldAskFollowup(current) ?? false;
+  if (current.reasoning.status === 'pending' && !needsClarification) {
+    return { ...current, reasoning: { status } };
+  }
+  return current;
+}
+
+function toThoughtItemStatus(
+  status: ThoughtStepStatus,
+): 'loading' | 'success' | 'error' | 'abort' | undefined {
+  return status === 'pending' ? undefined : status;
+}
+
+function intentDescription(state: ChatThoughtState): string {
+  switch (state.intent.status) {
+    case 'loading':
+      return '正在识别用户要查找的对象';
+    case 'success':
+      return state.intent.intent && INTENT_LABELS[state.intent.intent]
+        ? `已识别为${INTENT_LABELS[state.intent.intent]}`
+        : '已完成用户意图判断';
+    case 'error':
+      return '意图判断失败';
+    case 'abort':
+      return '已停止意图判断';
+    default:
+      return '等待开始';
+  }
+}
+
+function clarityDescription(state: ChatThoughtState): string {
+  switch (state.clarity.status) {
+    case 'loading':
+      return '正在检查是否需要补充信息';
+    case 'success': {
+      const needsClarification =
+        shouldAskFollowup(state);
+      if (needsClarification) {
+        const question = state.clarity.clarifyQuestion?.trim();
+        const suggestions = state.clarity.suggestedQuestions ?? [];
+        if (!question) {
+          return '需要补充信息';
+        }
+        return suggestions.length
+          ? `需要补充信息：${question} 可参考：${suggestions.join('；')}`
+          : `需要补充信息：${question}`;
+      }
+      return needsClarification === false
+        ? '问题明确，无需追问'
+        : '已完成问题明确性判断';
+    }
+    case 'error':
+      return '问题明确性判断失败';
+    case 'abort':
+      return '已停止问题明确性判断';
+    default:
+      return '等待意图判断完成';
+  }
+}
+
+function reasoningDescription(state: ChatThoughtState): string {
+  switch (state.reasoning.status) {
+    case 'loading':
+      return '正在分析并生成回答';
+    case 'success':
+      return '分析完成';
+    case 'error':
+      return '分析失败';
+    case 'abort':
+      return '已停止分析';
+    default: {
+      const needsClarification =
+        shouldAskFollowup(state);
+      if (needsClarification) {
+        return '等待补充信息后继续';
+      }
+      return state.clarity.status === 'success'
+        ? '准备进入深度思考'
+        : '等待问题判断完成';
+    }
+  }
+}
+
+function thoughtAnnouncement(state: ChatThoughtState): string {
+  if (state.reasoning.status !== 'pending') {
+    return `深度思考：${reasoningDescription(state)}`;
+  }
+  if (state.clarity.status !== 'pending') {
+    return `判断问题是否明确：${clarityDescription(state)}`;
+  }
+  return `判断用户意图：${intentDescription(state)}`;
+}
+
+function ThoughtProgress({
+  message,
+  reduceMotion,
+}: {
+  message: ChatMessage;
+  reduceMotion: boolean | null;
+}) {
+  const state = message.thoughtState ?? {
+    intent: { status: 'success' },
+    clarity: { status: 'success' },
+    reasoning: {
+      status:
+        message.status === 'error'
+          ? 'error'
+          : message.status === 'abort'
+            ? 'abort'
+            : message.status === 'success'
+              ? 'success'
+              : 'loading',
+    },
+  } satisfies ChatThoughtState;
+
+  const items: ThoughtChainProps['items'] = [
+    {
+      key: 'intent',
+      title: <span className={styles.thoughtTitle}>判断用户意图</span>,
+      description: (
+        <span className={styles.thoughtDescription}>
+          {intentDescription(state)}
+        </span>
+      ),
+      status: toThoughtItemStatus(state.intent.status),
+      blink: !reduceMotion && state.intent.status === 'loading',
+    },
+    {
+      key: 'clarity',
+      title: <span className={styles.thoughtTitle}>判断问题是否明确</span>,
+      description: (
+        <span className={styles.thoughtDescription}>
+          {clarityDescription(state)}
+        </span>
+      ),
+      status: toThoughtItemStatus(state.clarity.status),
+      blink: !reduceMotion && state.clarity.status === 'loading',
+    },
+    {
+      key: 'reasoning',
+      title: <span className={styles.thoughtTitle}>深度思考</span>,
+      description: (
+        <span className={styles.thoughtDescription}>
+          {reasoningDescription(state)}
+        </span>
+      ),
+      content: message.thinkContent ? (
+        <div className={styles.thoughtStream}>{message.thinkContent}</div>
+      ) : undefined,
+      status: toThoughtItemStatus(state.reasoning.status),
+      blink: !reduceMotion && state.reasoning.status === 'loading',
+    },
+  ];
+
+  return (
+    <div
+      className={styles.thoughtPanel}
+      role="group"
+      aria-label="任务处理过程"
+    >
+      <span
+        className={styles.srOnly}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {thoughtAnnouncement(state)}
+      </span>
+      <ThoughtChain
+        items={items}
+        line="solid"
+        rootClassName={styles.thoughtChain}
+        classNames={{
+          item: styles.thoughtItem,
+          itemHeader: styles.thoughtItemHeader,
+          itemContent: styles.thoughtItemContent,
+        }}
+      />
+    </div>
+  );
+}
+
+interface EntryDetailState {
+  title: string;
+  sectionLabel?: string;
+  listFields: DisplayField[];
+  detailFields: DisplayField[];
+  item: RelatedEntryRow;
+}
+
+function FieldDefinitionList({
+  fields,
+  item,
+  className,
+}: {
+  fields: DisplayField[];
+  item: RelatedEntryRow;
+  className?: string;
+}) {
+  if (!fields.length) {
+    return null;
+  }
+  return (
+    <dl className={className ?? styles.entryFields}>
+      {fields.map((field) => (
+        <div key={field.key} className={styles.entryFieldRow}>
+          <dt>{field.label}</dt>
+          <dd>{formatCellValue(item[field.key])}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function EntrySectionList({
+  sectionKey,
+  fields,
+  items,
+  onOpenDetail,
+}: {
+  sectionKey: string;
+  fields: DisplayField[];
+  items: RelatedEntryRow[];
+  onOpenDetail: (item: RelatedEntryRow, index: number) => void;
+}) {
+  const titleField = fields[0];
+  const cardFields = fields.slice(1);
+
+  return (
+    <List
+      className={styles.entriesList}
+      itemLayout="vertical"
+      dataSource={items}
+      split
+      renderItem={(item, index) => {
+        const titleText = titleField
+          ? formatCellValue(item[titleField.key])
+          : `条目 ${index + 1}`;
+
+        return (
+          <List.Item
+            key={`${sectionKey}-${index}-${titleText}`}
+            className={styles.entryItem}
+            onClick={() => onOpenDetail(item, index)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onOpenDetail(item, index);
+              }
+            }}
+            tabIndex={0}
+            role="button"
+            aria-label={`查看详情：${titleText}`}
+          >
+            <div className={styles.entryHead}>
+              <Typography.Text strong className={styles.entryTitle}>
+                {titleText}
+              </Typography.Text>
+              <span className={styles.entryHint}>详情</span>
+            </div>
+            <FieldDefinitionList fields={cardFields} item={item} />
+          </List.Item>
+        );
+      }}
+    />
+  );
+}
+
 function RelatedEntriesList({
   payload,
 }: {
   payload: RelatedEntriesPayload;
 }) {
-  const fields = payload.fields;
-  const items = payload.items;
+  const [detail, setDetail] = useState<EntryDetailState | null>(null);
 
-  if (!items.length) {
+  const sections: RelatedEntriesSection[] =
+    payload.sections && payload.sections.length > 0
+      ? payload.sections
+      : [
+          {
+            key: payload.listKey || 'items',
+            label: '相关结果',
+            fields: payload.fields,
+            detailFields: payload.detailFields ?? [],
+            items: payload.items,
+          },
+        ];
+
+  const totalCount = sections.reduce((sum, s) => sum + s.items.length, 0);
+  const multiSection = Boolean(payload.sections && payload.sections.length > 0);
+
+  if (!totalCount) {
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -101,46 +591,118 @@ function RelatedEntriesList({
     );
   }
 
-  const titleField = fields[0];
-  const detailFields = fields.slice(1);
+  const openDetail = (
+    section: RelatedEntriesSection,
+    item: RelatedEntryRow,
+    index: number,
+  ) => {
+    const listFields = section.fields.length
+      ? section.fields
+      : payload.fields;
+    const detailFields = section.detailFields.length
+      ? section.detailFields
+      : (payload.detailFields ?? []);
+    const titleField = listFields[0];
+    const title = titleField
+      ? formatCellValue(item[titleField.key])
+      : `条目 ${index + 1}`;
+
+    setDetail({
+      title,
+      sectionLabel: multiSection ? section.label : undefined,
+      listFields,
+      detailFields,
+      item,
+    });
+  };
 
   return (
     <div className={styles.entriesPanel}>
       <Typography.Text className={styles.entriesTitle}>
         相关结果
-        <span className={styles.entriesCount}>{items.length}</span>
+        <span className={styles.entriesCount}>{totalCount}</span>
       </Typography.Text>
-      <List
-        className={styles.entriesList}
-        itemLayout="vertical"
-        dataSource={items}
-        split
-        renderItem={(item, index) => {
-          const titleText = titleField
-            ? formatCellValue(item[titleField.key])
-            : `条目 ${index + 1}`;
 
-          return (
-            <List.Item key={`${index}-${titleText}`} className={styles.entryItem}>
-              <div className={styles.entryHead}>
-                <Typography.Text strong className={styles.entryTitle}>
-                  {titleText}
-                </Typography.Text>
-              </div>
-              {detailFields.length > 0 ? (
-                <dl className={styles.entryFields}>
-                  {detailFields.map((field: DisplayField) => (
-                    <div key={field.key} className={styles.entryFieldRow}>
-                      <dt>{field.label}</dt>
-                      <dd>{formatCellValue(item[field.key])}</dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : null}
-            </List.Item>
-          );
+      <div className={styles.entriesSections}>
+        {sections.map((section) => (
+          <section
+            key={section.key}
+            className={styles.entriesSection}
+            aria-label={section.label}
+          >
+            {multiSection ? (
+              <Typography.Text className={styles.sectionTitle}>
+                {section.label}
+                <span className={styles.entriesCount}>{section.items.length}</span>
+              </Typography.Text>
+            ) : null}
+            <EntrySectionList
+              sectionKey={section.key}
+              fields={
+                section.fields.length ? section.fields : payload.fields
+              }
+              items={section.items}
+              onOpenDetail={(item, index) => openDetail(section, item, index)}
+            />
+          </section>
+        ))}
+      </div>
+
+      <Drawer
+        title={
+          <div className={styles.detailDrawerTitle}>
+            <span className={styles.detailDrawerName}>{detail?.title ?? '详情'}</span>
+            {detail?.sectionLabel ? (
+              <span className={styles.detailDrawerBadge}>{detail.sectionLabel}</span>
+            ) : null}
+          </div>
+        }
+        placement="right"
+        width={440}
+        open={Boolean(detail)}
+        onClose={() => setDetail(null)}
+        destroyOnHidden
+        className={styles.detailDrawer}
+        styles={{
+          body: { paddingTop: 12 },
         }}
-      />
+      >
+        {detail ? (
+          <div className={styles.detailBody}>
+            {detail.listFields.length > 0 ? (
+              <div className={styles.detailBlock}>
+                <Typography.Text className={styles.detailBlockTitle}>
+                  基本信息
+                </Typography.Text>
+                <FieldDefinitionList
+                  fields={detail.listFields}
+                  item={detail.item}
+                  className={styles.detailFields}
+                />
+              </div>
+            ) : null}
+
+            {detail.detailFields.length > 0 ? (
+              <div className={styles.detailBlock}>
+                <Typography.Text className={styles.detailBlockTitle}>
+                  详细信息
+                </Typography.Text>
+                <FieldDefinitionList
+                  fields={detail.detailFields}
+                  item={detail.item}
+                  className={styles.detailFields}
+                />
+              </div>
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="暂无更多详情字段"
+                className={styles.entriesEmpty}
+              />
+            )}
+          </div>
+        ) : null}
+      </Drawer>
     </div>
   );
 }
@@ -153,58 +715,30 @@ function AnswerBody({
   reduceMotion: boolean | null;
 }) {
   const status = message.status;
-  const thinking = Boolean(message.thinkContent);
-  const isStreaming =
-    status === 'loading' || status === 'updating';
-  const thinkLoading = isStreaming && !message.relatedEntries;
-
-  const thinkTitle = thinkLoading
-    ? '正在思考'
-    : thinking
-      ? '思考过程'
-      : status === 'error'
-        ? '处理失败'
-        : status === 'abort'
-          ? '已停止'
-          : '思考过程';
-
-  const showThink = thinking || isStreaming || status === 'error' || status === 'abort';
+  const isStreaming = status === 'loading' || status === 'updating';
+  const showThoughtProgress =
+    Boolean(message.thoughtState) ||
+    Boolean(message.thinkContent) ||
+    isStreaming ||
+    status === 'error' ||
+    status === 'abort';
 
   return (
     <div className={styles.answerContent}>
-      {showThink ? (
-        <Think
-          title={thinkTitle}
-          blink={!reduceMotion && thinkLoading}
-          loading={
-            thinkLoading ? (
-              <SyncOutlined className={styles.thinkSpin} />
-            ) : (
-              false
-            )
-          }
-          defaultExpanded
-          rootClassName={styles.thinkRoot}
-        >
-          {message.thinkContent ||
-            (status === 'loading'
-              ? '正在连接服务…'
-              : status === 'error'
-                ? message.content || '请求失败'
-                : status === 'abort'
-                  ? message.content || '已停止生成。'
-                  : '')}
-        </Think>
+      {showThoughtProgress ? (
+        <ThoughtProgress message={message} reduceMotion={reduceMotion} />
       ) : null}
 
       {message.relatedEntries ? (
         <RelatedEntriesList payload={message.relatedEntries} />
       ) : null}
 
-      {!message.relatedEntries &&
-      !message.thinkContent &&
-      message.content &&
-      (status === 'error' || status === 'abort' || status === 'success') ? (
+      {message.content &&
+      (status === 'error' ||
+        status === 'abort' ||
+        (status === 'success' &&
+          !message.relatedEntries &&
+          !message.thinkContent)) ? (
         <Typography.Paragraph className={styles.fallbackText}>
           {message.content}
         </Typography.Paragraph>
@@ -281,6 +815,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 ...message,
                 status: 'abort',
                 content: message.content || '已停止生成。',
+                thoughtState: stopThoughtState(message.thoughtState, 'abort'),
               }
             : message,
         ),
@@ -316,6 +851,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           role: 'assistant',
           content: '',
           thinkContent: '',
+          thoughtState: createThoughtState(),
           status: 'loading',
           kind: 'answer',
           sourceQuestion: question,
@@ -341,6 +877,76 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               ),
             );
           },
+          onNodeStart: (event) => {
+            if (
+              activeAnswerRef.current !== answerId ||
+              (event.node !== 'intent_classify' &&
+                event.node !== 'followup_check')
+            ) {
+              return;
+            }
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === answerId
+                  ? {
+                      ...message,
+                      thoughtState: updateThoughtNode(
+                        message.thoughtState,
+                        event,
+                        'start',
+                      ),
+                      status: 'updating',
+                    }
+                  : message,
+              ),
+            );
+          },
+          onNodeEnd: (event) => {
+            if (
+              activeAnswerRef.current !== answerId ||
+              (event.node !== 'intent_classify' &&
+                event.node !== 'followup_check' &&
+                event.node !== 'clarify')
+            ) {
+              return;
+            }
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === answerId
+                  ? {
+                      ...message,
+                      thoughtState: updateThoughtNode(
+                        message.thoughtState,
+                        event,
+                        'end',
+                      ),
+                      status: 'updating',
+                    }
+                  : message,
+              ),
+            );
+          },
+          onClarify: (payload: ClarificationPayload) => {
+            if (activeAnswerRef.current !== answerId) {
+              return;
+            }
+
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === answerId
+                  ? {
+                      ...message,
+                      thoughtState: requestClarification(
+                        message.thoughtState,
+                        payload.question,
+                        payload.suggestedQuestions,
+                      ),
+                      status: 'updating',
+                    }
+                  : message,
+              ),
+            );
+          },
           onToken: (content) => {
             if (activeAnswerRef.current !== answerId) {
               return;
@@ -352,6 +958,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                   ? {
                       ...message,
                       thinkContent: `${message.thinkContent ?? ''}${content}`,
+                      thoughtState: activateReasoning(message.thoughtState),
                       status: 'updating',
                     }
                   : message,
@@ -369,6 +976,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                   ? {
                       ...message,
                       relatedEntries: payload,
+                      thoughtState: activateReasoning(message.thoughtState),
                       displayFields: payload.fields.length
                         ? payload.fields
                         : message.displayFields,
@@ -392,16 +1000,24 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 if (message.id !== answerId) {
                   return message;
                 }
-                const hasPayload =
+                const hasOutput =
                   Boolean(message.thinkContent?.trim()) ||
-                  (message.relatedEntries?.items.length ?? 0) > 0;
+                  Boolean(message.relatedEntries);
+                const isClarificationResponse =
+                  message.thoughtState?.clarity.status === 'success' &&
+                  shouldAskFollowup(message.thoughtState) === true;
+                const completedCleanly = hasOutput || isClarificationResponse;
+
                 return {
                   ...message,
-                  status: 'success',
-                  content: hasPayload
+                  status: completedCleanly ? 'success' : 'error',
+                  thoughtState: completedCleanly
+                    ? completeThoughtState(message.thoughtState, hasOutput)
+                    : stopThoughtState(message.thoughtState, 'error'),
+                  content: completedCleanly
                     ? message.content
                     : message.content ||
-                      '回答已完成，但暂时没有可展示的内容。',
+                      '处理流程提前结束，暂时没有可展示的内容，请重试。',
                 };
               }),
             );
@@ -422,7 +1038,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 message.id === answerId
                   ? {
                       ...message,
-                      status: 'error',
+                      status: error.name === 'AbortError' ? 'abort' : 'error',
+                      thoughtState: stopThoughtState(
+                        message.thoughtState,
+                        error.name === 'AbortError' ? 'abort' : 'error',
+                      ),
                       content:
                         error.name === 'AbortError'
                           ? message.content || '已停止生成。'
@@ -596,15 +1216,41 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
 
         const copyText = [
           message.thinkContent,
-          message.relatedEntries?.items
-            .map((row, i) => {
-              const fields = message.relatedEntries?.fields ?? [];
-              const lines = fields.map(
-                (f) => `${f.label}: ${formatCellValue(row[f.key])}`,
-              );
-              return [`#${i + 1}`, ...lines].join('\n');
-            })
-            .join('\n\n'),
+          message.thoughtState?.clarity.clarifyQuestion,
+          (() => {
+            const related = message.relatedEntries;
+            if (!related) {
+              return '';
+            }
+            const sections =
+              related.sections && related.sections.length > 0
+                ? related.sections
+                : [
+                    {
+                      label: '相关结果',
+                      fields: related.fields,
+                      detailFields: related.detailFields ?? [],
+                      items: related.items,
+                    },
+                  ];
+            return sections
+              .map((section) => {
+                const body = section.items
+                  .map((row, i) => {
+                    const allFields = [
+                      ...section.fields,
+                      ...(section.detailFields ?? []),
+                    ];
+                    const lines = allFields.map(
+                      (f) => `${f.label}: ${formatCellValue(row[f.key])}`,
+                    );
+                    return [`#${i + 1}`, ...lines].join('\n');
+                  })
+                  .join('\n\n');
+                return section.label ? `${section.label}\n${body}` : body;
+              })
+              .join('\n\n');
+          })(),
           message.content,
         ]
           .filter(Boolean)

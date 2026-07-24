@@ -5,8 +5,17 @@ Flow:
            → Backend A projects config fields and proxies SSE
            → POST Backend B /api/chat/stream  JSON body: query/session_id/function
 
-SSE to frontend:
-  meta → token* (thinking) → related_entries (list) → done
+SSE protocol:
+  Backend B: intent_classify → followup_check → token* → final_answer
+             → optional related_entries → EOF
+  Frontend:  meta → node_start / node_end → token*
+             → optional related_entries → done
+  Clarify:   node_start / node_end → clarify → done
+
+``intent_classify`` maps ``achievements`` / ``requirements`` /
+``expert_team`` / ``enterprises`` to the four supported user intents.
+``followup_check.is_followup == false`` advances directly to token streaming.
+A later explicit ``clarify`` node/event can override that decision.
 
 Start from ``backend/``::
 
@@ -38,6 +47,7 @@ from app.field_schema import (
     ACHIEVEMENT_FIELD_CATALOG,
     AGENT_FUNCTION_MAP,
     resolve_function,
+    selected_detail_fields,
     selected_fields,
 )
 from app.proxy_stream import stream_from_backend_b
@@ -96,6 +106,7 @@ async def list_functions() -> dict[str, Any]:
                 "function": fn,
                 "agentKeys": [k for k, v in AGENT_FUNCTION_MAP.items() if v == fn],
                 "fields": selected_fields(fn),
+                "detailFields": selected_detail_fields(fn),
             }
         )
 
@@ -124,8 +135,22 @@ async def stream_chat(request: Request) -> StreamingResponse:
           "function": "achievements"
         }
 
-    Events: ``meta``, repeated ``token``, ``related_entries``, ``done``
-    (and optional ``error`` before ``done``).
+    Downstream events: ``meta``, ``node_start``, ``node_end``, optional
+    ``clarify``, repeated ``token``, ``related_entries``, ``done``
+    (and optional ``error`` before ``done``). Upstream ``final_answer`` is
+    consumed by Backend A and is not forwarded to the frontend.
+
+    Workflow nodes:
+
+    - ``intent_classify`` identifies ``achievements`` (找成果),
+      ``requirements`` (找需求), ``expert_team`` (找专家), or
+      ``enterprises`` (找企业).
+    - ``followup_check`` decides whether the question is clear.
+      ``is_followup: false`` advances directly to deep-thinking ``token`` events.
+    - ``final_answer`` is a successful completion marker. Backend A keeps reading
+      any following list event and synthesizes ``done(stop)`` at upstream EOF.
+    - A later explicit ``clarify`` node/event can request more information and
+      override the earlier no-follow-up result.
     """
 
     try:

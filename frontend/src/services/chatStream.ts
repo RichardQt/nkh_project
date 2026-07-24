@@ -1,5 +1,11 @@
 import type { AgentKey } from '../types/agent';
-import type { DisplayField, RelatedEntriesPayload, RelatedEntryRow } from '../types/chat';
+import type {
+  ClarificationPayload,
+  DisplayField,
+  RelatedEntriesPayload,
+  RelatedEntryRow,
+  WorkflowNodeEvent,
+} from '../types/chat';
 
 /** null / undefined / 'general' = home brand mode, no specialist scene. */
 export type ChatAgentKey = AgentKey | 'general' | null | undefined;
@@ -12,6 +18,9 @@ interface ChatStreamInput {
 
 export interface ChatStreamCallbacks {
   onMeta?: (meta: { sessionId?: string; function?: string; fields?: DisplayField[] }) => void;
+  onNodeStart?: (event: WorkflowNodeEvent) => void;
+  onNodeEnd?: (event: WorkflowNodeEvent) => void;
+  onClarify?: (payload: ClarificationPayload) => void;
   onToken: (content: string) => void;
   onRelatedEntries: (payload: RelatedEntriesPayload) => void;
   onComplete: () => void;
@@ -73,6 +82,138 @@ function parseFields(raw: unknown): DisplayField[] {
   return fields;
 }
 
+function parseWorkflowNodeEvent(data: string): WorkflowNodeEvent | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    const node = typeof record?.node === 'string' ? record.node.trim() : '';
+
+    if (!record || !node) {
+      return null;
+    }
+
+    const event: WorkflowNodeEvent = { node };
+
+    if (typeof record.intent === 'string') {
+      event.intent = record.intent;
+    }
+    if (Array.isArray(record.categories)) {
+      event.categories = record.categories.filter(
+        (category): category is string => typeof category === 'string',
+      );
+    }
+    if (typeof record.need_clarify === 'boolean') {
+      event.needClarify = record.need_clarify;
+    }
+    if (typeof record.clarify_question === 'string') {
+      event.clarifyQuestion = record.clarify_question;
+    }
+    if (typeof record.clarify_stage === 'number') {
+      event.clarifyStage = record.clarify_stage;
+    }
+    if (typeof record.is_followup === 'boolean') {
+      event.isFollowup = record.is_followup;
+    }
+    if (typeof record.is_new_topic === 'boolean') {
+      event.isNewTopic = record.is_new_topic;
+    }
+    if (typeof record.rag_count === 'number') {
+      event.ragCount = record.rag_count;
+    }
+    if (typeof record.kg_count === 'number') {
+      event.kgCount = record.kg_count;
+    }
+
+    return event;
+  } catch {
+    return null;
+  }
+}
+
+function parseClarification(data: string): ClarificationPayload | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+
+    const rawQuestion =
+      typeof record.question === 'string'
+        ? record.question
+        : typeof record.clarify_question === 'string'
+          ? record.clarify_question
+          : '';
+    const question = rawQuestion.trim();
+    if (!question) {
+      return null;
+    }
+
+    const rawSuggestions = Array.isArray(record.suggested_questions)
+      ? record.suggested_questions
+      : Array.isArray(record.suggestedQuestions)
+        ? record.suggestedQuestions
+        : [];
+    const suggestedQuestions = rawSuggestions
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    return { question, suggestedQuestions };
+  } catch {
+    return null;
+  }
+}
+
+function parseEntryRows(raw: unknown): RelatedEntryRow[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter(
+    (row): row is RelatedEntryRow =>
+      !!row && typeof row === 'object' && !Array.isArray(row),
+  ) as RelatedEntryRow[];
+}
+
+function parseRelatedSections(
+  raw: unknown,
+): RelatedEntriesPayload['sections'] {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const sections = raw
+    .map((entry) => {
+      const section = asRecord(entry);
+      if (!section) {
+        return null;
+      }
+      const key =
+        typeof section.key === 'string' && section.key
+          ? section.key
+          : '';
+      const label =
+        typeof section.label === 'string' && section.label
+          ? section.label
+          : key || '相关结果';
+      if (!key && !Array.isArray(section.items)) {
+        return null;
+      }
+      const items = parseEntryRows(section.items);
+      if (!items.length) {
+        return null;
+      }
+      return {
+        key: key || label,
+        label,
+        fields: parseFields(section.fields),
+        detailFields: parseFields(section.detailFields),
+        items,
+      };
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null);
+
+  return sections.length ? sections : undefined;
+}
+
 function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
   try {
     const payload = JSON.parse(data) as unknown;
@@ -82,30 +223,100 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
     }
 
     const fields = parseFields(record.fields);
+    const detailFields = parseFields(record.detailFields);
     const listKey =
       typeof record.listKey === 'string' && record.listKey
         ? record.listKey
         : 'items';
 
-    let items: RelatedEntryRow[] = [];
-    if (Array.isArray(record.items)) {
-      items = record.items.filter(
-        (row): row is RelatedEntryRow =>
-          !!row && typeof row === 'object' && !Array.isArray(row),
-      ) as RelatedEntryRow[];
-    } else if (Array.isArray(record[listKey])) {
-      items = (record[listKey] as unknown[]).filter(
-        (row): row is RelatedEntryRow =>
-          !!row && typeof row === 'object' && !Array.isArray(row),
-      ) as RelatedEntryRow[];
-    } else if (Array.isArray(record.achievements)) {
-      items = (record.achievements as unknown[]).filter(
-        (row): row is RelatedEntryRow =>
-          !!row && typeof row === 'object' && !Array.isArray(row),
-      ) as RelatedEntryRow[];
+    const sections = parseRelatedSections(record.sections);
+
+    // Multi-section platforms: sections alone are enough
+    if (sections?.length) {
+      const items =
+        parseEntryRows(record.items).length > 0
+          ? parseEntryRows(record.items)
+          : sections.flatMap((s) => s.items);
+      return {
+        listKey,
+        fields: fields.length ? fields : sections[0]?.fields ?? [],
+        detailFields:
+          detailFields.length > 0
+            ? detailFields
+            : sections[0]?.detailFields ?? [],
+        items,
+        sections,
+      };
     }
 
-    return { listKey, fields, items };
+    let rawItems: unknown[] | null = null;
+    if (Array.isArray(record.items)) {
+      rawItems = record.items;
+    } else if (Array.isArray(record[listKey])) {
+      rawItems = record[listKey] as unknown[];
+    } else {
+      const alias = [
+        'achievements',
+        'requirements',
+        'expert_team',
+        'experts',
+        'demands',
+        'enterprises',
+        'platforms',
+        'poc_center',
+        'pilot_test_platform',
+        'large_scale_equipment',
+        'public_service_platform',
+      ].find((key) => Array.isArray(record[key]));
+      if (alias) {
+        rawItems = record[alias] as unknown[];
+      }
+    }
+
+    // Upstream may send platform sub-keys without a projected sections array
+    if (!rawItems) {
+      const platformKeys = [
+        ['poc_center', '概念验证中心'],
+        ['pilot_test_platform', '中试平台'],
+        ['large_scale_equipment', '大型仪器设备'],
+        ['public_service_platform', '公共服务平台'],
+      ] as const;
+      const inferred = platformKeys
+        .map(([key, label]) => {
+          const items = parseEntryRows(record[key]);
+          if (!items.length) {
+            return null;
+          }
+          return {
+            key,
+            label,
+            fields,
+            detailFields,
+            items,
+          };
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null);
+
+      if (inferred.length) {
+        return {
+          listKey: 'platforms',
+          fields,
+          detailFields,
+          items: inferred.flatMap((s) => s.items),
+          sections: inferred,
+        };
+      }
+      return null;
+    }
+
+    const items = parseEntryRows(rawItems);
+    return {
+      listKey,
+      fields,
+      detailFields,
+      items,
+      sections: undefined,
+    };
   } catch {
     return null;
   }
@@ -130,6 +341,33 @@ function extractContent(data: string): string | null {
   }
 }
 
+const FAILURE_FINISH_REASONS = new Set([
+  'error',
+  'fail',
+  'failed',
+  'abort',
+  'aborted',
+  'cancel',
+  'cancelled',
+]);
+
+function parseFinishReason(data: string): string | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    const reason =
+      typeof record?.finishReason === 'string'
+        ? record.finishReason.trim().toLowerCase()
+        : '';
+    return reason || null;
+  } catch {
+    return null;
+  }
+}
+
+function isFailureFinishReason(reason: string): boolean {
+  return FAILURE_FINISH_REASONS.has(reason);
+}
+
 function normalizeAgentKey(agentKey: ChatAgentKey): string | null {
   if (agentKey == null || agentKey === 'general') {
     return null;
@@ -139,7 +377,7 @@ function normalizeAgentKey(agentKey: ChatAgentKey): string | null {
 
 /**
  * Stream chat from Backend A SSE:
- *   meta → token* → related_entries → done
+ *   meta → node_start / node_end → [clarify | token*] → related_entries → done
  */
 export function startChatStream(
   input: ChatStreamInput,
@@ -193,6 +431,106 @@ export function startChatStream(
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
 
+      const dispatchFrame = async (
+        frame: NonNullable<ReturnType<typeof parseSseChunk>>,
+      ): Promise<boolean> => {
+        const eventName = frame.event.trim().toLowerCase();
+
+        if (eventName === 'meta') {
+          try {
+            const payload = asRecord(JSON.parse(frame.data) as unknown);
+            if (payload) {
+              callbacks.onMeta?.({
+                sessionId:
+                  typeof payload.sessionId === 'string'
+                    ? payload.sessionId
+                    : undefined,
+                function:
+                  typeof payload.function === 'string'
+                    ? payload.function
+                    : undefined,
+                fields: parseFields(payload.fields),
+              });
+            }
+          } catch {
+            // ignore malformed meta
+          }
+          return true;
+        }
+
+        if (eventName === 'node_start' || eventName === 'node_end') {
+          const nodeEvent = parseWorkflowNodeEvent(frame.data);
+          if (nodeEvent) {
+            if (eventName === 'node_start') {
+              callbacks.onNodeStart?.(nodeEvent);
+            } else {
+              callbacks.onNodeEnd?.(nodeEvent);
+            }
+          }
+          return true;
+        }
+
+        if (eventName === 'clarify') {
+          const clarification = parseClarification(frame.data);
+          if (clarification) {
+            callbacks.onClarify?.(clarification);
+          }
+          return true;
+        }
+
+        if (eventName === 'token' || eventName === 'delta') {
+          const content = extractContent(frame.data);
+          if (content) {
+            callbacks.onToken(content);
+          }
+          return true;
+        }
+
+        if (eventName === 'related_entries') {
+          const entries = parseRelatedEntries(frame.data);
+          if (!entries) {
+            settleError(new Error('服务返回的结果列表格式不正确。'));
+            try {
+              await reader.cancel();
+            } catch {
+              // ignore
+            }
+            return false;
+          }
+          callbacks.onRelatedEntries(entries);
+          return true;
+        }
+
+        if (eventName === 'error') {
+          const message =
+            extractContent(frame.data) || '服务返回错误，请稍后重试。';
+          settleError(new Error(message));
+          try {
+            await reader.cancel();
+          } catch {
+            // ignore
+          }
+          return false;
+        }
+
+        if (eventName === 'done') {
+          const finishReason = parseFinishReason(frame.data);
+          if (!finishReason || isFailureFinishReason(finishReason)) {
+            settleError(new Error('服务未能完成请求，请稍后重试。'));
+          } else {
+            settleSuccess();
+          }
+          try {
+            await reader.cancel();
+          } catch {
+            // ignore
+          }
+          return false;
+        }
+
+        return true;
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
@@ -205,71 +543,21 @@ export function startChatStream(
 
         for (const part of parts) {
           const frame = parseSseChunk(part);
-          if (!frame) {
-            continue;
-          }
-
-          if (frame.event === 'meta') {
-            try {
-              const payload = JSON.parse(frame.data) as Record<string, unknown>;
-              callbacks.onMeta?.({
-                sessionId:
-                  typeof payload.sessionId === 'string'
-                    ? payload.sessionId
-                    : undefined,
-                function:
-                  typeof payload.function === 'string'
-                    ? payload.function
-                    : undefined,
-                fields: parseFields(payload.fields),
-              });
-            } catch {
-              // ignore malformed meta
-            }
-            continue;
-          }
-
-          if (frame.event === 'token' || frame.event === 'delta') {
-            const content = extractContent(frame.data);
-            if (content) {
-              callbacks.onToken(content);
-            }
-            continue;
-          }
-
-          if (frame.event === 'related_entries') {
-            const entries = parseRelatedEntries(frame.data);
-            if (entries) {
-              callbacks.onRelatedEntries(entries);
-            }
-            continue;
-          }
-
-          if (frame.event === 'error') {
-            const message =
-              extractContent(frame.data) || '服务返回错误，请稍后重试。';
-            settleError(new Error(message));
-            try {
-              await reader.cancel();
-            } catch {
-              // ignore
-            }
-            return;
-          }
-
-          if (frame.event === 'done') {
-            settleSuccess();
-            try {
-              await reader.cancel();
-            } catch {
-              // ignore
-            }
+          if (frame && !(await dispatchFrame(frame))) {
             return;
           }
         }
       }
 
-      settleSuccess();
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        const trailingFrame = parseSseChunk(buffer);
+        if (trailingFrame && !(await dispatchFrame(trailingFrame))) {
+          return;
+        }
+      }
+
+      settleError(new Error('响应流提前结束，请重试。'));
     } catch (error) {
       if (controller.signal.aborted) {
         settleError(

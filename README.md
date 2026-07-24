@@ -11,7 +11,7 @@
 - Ant Design 6
 - Ant Design X 2：`Sender`、`Prompts`、`Welcome`、`Bubble.List`、`ThoughtChain`、`Actions`、`XProvider`
 - `@ant-design/x-markdown`：流式 Markdown 渲染
-- `@ant-design/x-sdk`：标准 SSE 请求与中止控制
+- 原生 `fetch` + `ReadableStream` + `AbortController`：SSE 解析、流式请求与中止控制
 - `motion/react`：页面入场、智能体切换和推荐问题下推动画
 - CSS Modules + Ant Design 主题令牌
 
@@ -22,7 +22,7 @@
 - FastAPI + Uvicorn + httpx
 - 前端只调 Backend A：`POST /api/chat/stream`
 - Backend A 再调 Backend B 的 SSE：`POST {BACKEND_B}/api/chat/stream`，JSON body：`query` / `session_id` / `function`
-- 上游事件：`token`（思维链）+ `related_entries`（列表）
+- 上游事件：`node_start` / `node_end`（任务阶段）+ 可选 `clarify`（澄清问题）+ `token`（深度思考）+ `final_answer`（回答完成）+ `related_entries`（列表）
 - 列表字段由 Backend A 配置投影（`ACHIEVEMENT_DISPLAY_FIELDS` 等），前端只渲染返回的字段
 
 ## 页面
@@ -96,12 +96,17 @@ npm run dev
 }
 ```
 
-SSE 依次返回：
+SSE 协议处理顺序：
 
 1. `meta`：sessionId / function / fields（字段元数据）
-2. 多个 `token`：思维链文本（前端 `Think` 组件）
-3. `related_entries`：投影后的列表（前端 Ant Design `List`）
-4. `done`
+2. `intent_classify` 的 `node_start` / `node_end`：驱动“判断用户意图”。`intent` 映射为 `achievements` 找成果、`requirements` 找需求、`expert_team` 找专家、`enterprises` 找企业
+3. `followup_check` 的 `node_start` / `node_end`：驱动“判断问题是否明确”。`is_followup: false` 表示无需追问，立即进入深度思考
+4. 无需追问时，多个 `token` 按顺序流式写入 `ThoughtChain` 的“深度思考”节点；Backend A 观察到上游 `final_answer` 后认定回答完成，但不向前端透传该事件
+5. 如果后续 `clarify` 节点或同名事件明确要求补充信息，则覆盖之前的无需追问判断，展示澄清问题及可选建议问题；该分支可直接进入 `done`，不要求返回列表
+6. 非澄清结果可返回 `related_entries`：投影后的列表（前端 Ant Design `List`）
+7. `done`：`finishReason: stop` 表示正常结束，错误终态由 `error` 与 `finishReason: error` 表示。出现 `final_answer` 后，即使上游以 EOF 结束、没有显式 `done`，Backend A 也会补发 `done(stop)`
+
+`intent_classify.intent` 是模型识别的用户意图；下面的 `agentKey` → `function` 是请求路由，两者用途不同。
 
 场景 `agentKey` → Backend B `function` 映射示例：
 
