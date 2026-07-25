@@ -79,6 +79,36 @@ def _clarification_question(payload: dict[str, Any]) -> str:
     return ""
 
 
+def _normalize_suggested_questions(payload: dict[str, Any]) -> list[str]:
+    """Accept list or comma-separated string under common key names."""
+
+    raw = payload.get("questions")
+    if raw is None:
+        raw = payload.get("suggested_questions")
+    if raw is None:
+        raw = payload.get("suggestedQuestions")
+
+    items: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                items.append(item.strip())
+    elif isinstance(raw, str) and raw.strip():
+        # Support comma / Chinese comma separated fallback
+        for part in raw.replace("，", ",").split(","):
+            if part.strip():
+                items.append(part.strip())
+
+    # de-dupe, preserve order
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            ordered.append(item)
+    return ordered
+
+
 def _node_requests_clarification(payload: dict[str, Any]) -> bool:
     node = str(payload.get("node") or "").strip()
     if node == "followup_check":
@@ -390,17 +420,21 @@ async def _handle_upstream_event(
         question = _clarification_question(parsed)
         if not question:
             return
-        raw_suggestions = parsed.get("suggested_questions")
-        if not isinstance(raw_suggestions, list):
-            raw_suggestions = parsed.get("suggestedQuestions")
-        suggestions = (
-            [item.strip() for item in raw_suggestions if isinstance(item, str) and item.strip()]
-            if isinstance(raw_suggestions, list)
-            else []
-        )
+        suggestions = _normalize_suggested_questions(parsed)
         parsed["question"] = question
         parsed["suggested_questions"] = suggestions
         yield sse("clarify", parsed)
+        return
+
+    # Upstream may emit recommendations as a standalone event.
+    if name in ("suggested_questions", "suggestedQuestions"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        suggestions = _normalize_suggested_questions(parsed)
+        if not suggestions:
+            return
+        yield sse("suggested_questions", {"questions": suggestions})
         return
 
     # Thinking chain tokens from Backend B

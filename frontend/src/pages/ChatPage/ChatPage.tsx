@@ -7,7 +7,14 @@ import {
 } from 'react';
 import type { ComponentRef } from 'react';
 import { RedoOutlined, RobotOutlined } from '@ant-design/icons';
-import { Actions, Bubble, Sender, ThoughtChain, Welcome } from '@ant-design/x';
+import {
+  Actions,
+  Bubble,
+  Prompts,
+  Sender,
+  ThoughtChain,
+  Welcome,
+} from '@ant-design/x';
 import type {
   BubbleItemType,
   BubbleListProps,
@@ -18,6 +25,7 @@ import { useReducedMotion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { getAgent } from '../../data/agents';
 import {
+  GENERIC_STREAM_ERROR_MESSAGE,
   startChatStream,
   type ChatStreamController,
 } from '../../services/chatStream';
@@ -115,13 +123,23 @@ function startThoughtStep(status: ThoughtStepStatus): ThoughtStepStatus {
   return status === 'pending' ? 'loading' : status;
 }
 
-// followup_check uses is_followup as the product contract; an explicit clarify event overrides it.
+/**
+ * Product contract: ``need_clarify`` on node_end(clarify / followup_check).
+ * - false → question is clear, proceed to deep thinking
+ * - true  → show clarify panel (question + input + suggested questions)
+ * ``event: clarify`` sets clarificationRequested + default answer text.
+ */
 function shouldAskFollowup(state: ChatThoughtState): boolean | undefined {
-  return (
-    state.clarity.clarificationRequested ??
-    state.clarity.isFollowup ??
-    state.clarity.needClarify
-  );
+  if (state.clarity.clarificationRequested === true) {
+    return true;
+  }
+  if (typeof state.clarity.needClarify === 'boolean') {
+    return state.clarity.needClarify;
+  }
+  if (typeof state.clarity.isFollowup === 'boolean') {
+    return state.clarity.isFollowup;
+  }
+  return undefined;
 }
 
 function requestClarification(
@@ -155,6 +173,23 @@ function requestClarification(
   };
 }
 
+function applySuggestedQuestions(
+  state: ChatThoughtState | undefined,
+  suggestedQuestions: string[],
+): ChatThoughtState {
+  const current = state ?? createThoughtState();
+  if (!suggestedQuestions.length) {
+    return current;
+  }
+  return {
+    ...current,
+    clarity: {
+      ...current.clarity,
+      suggestedQuestions,
+    },
+  };
+}
+
 function updateThoughtNode(
   state: ChatThoughtState | undefined,
   event: WorkflowNodeEvent,
@@ -177,13 +212,35 @@ function updateThoughtNode(
     };
   }
 
-  if (event.node === 'followup_check') {
+  // 「分析用户问题」：followup_check 或 clarify 节点
+  if (event.node === 'followup_check' || event.node === 'clarify') {
     const needClarify =
       event.needClarify ?? current.clarity.needClarify;
     const clarifyQuestion =
       event.clarifyQuestion ?? current.clarity.clarifyQuestion;
     const isFollowup = event.isFollowup ?? current.clarity.isFollowup;
-    const needsClarification = isFollowup ?? needClarify;
+
+    if (phase === 'start') {
+      return {
+        ...current,
+        intent: {
+          ...current.intent,
+          status: completePrecedingStep(current.intent.status),
+        },
+        clarity: {
+          ...current.clarity,
+          status: startThoughtStep(current.clarity.status),
+          needClarify,
+          clarifyQuestion,
+          isFollowup,
+        },
+      };
+    }
+
+    // node_end: need_clarify is the source of truth
+    if (needClarify === true) {
+      return requestClarification(current, clarifyQuestion);
+    }
 
     return {
       ...current,
@@ -193,29 +250,17 @@ function updateThoughtNode(
       },
       clarity: {
         ...current.clarity,
-        status:
-          phase === 'start'
-            ? startThoughtStep(current.clarity.status)
-            : 'success',
-        needClarify,
+        status: 'success',
+        needClarify: needClarify ?? false,
+        clarificationRequested: false,
         clarifyQuestion,
         isFollowup,
       },
       reasoning:
-        phase === 'end' &&
-        needsClarification === false &&
         current.reasoning.status === 'pending'
           ? { status: 'loading' }
           : current.reasoning,
     };
-  }
-
-  if (
-    event.node === 'clarify' &&
-    phase === 'end' &&
-    (event.needClarify === true || Boolean(event.clarifyQuestion?.trim()))
-  ) {
-    return requestClarification(current, event.clarifyQuestion);
   }
 
   return current;
@@ -309,8 +354,8 @@ function intentDescription(state: ChatThoughtState): string {
       return '正在识别用户要查找的对象';
     case 'success':
       return state.intent.intent && INTENT_LABELS[state.intent.intent]
-        ? `已识别为${INTENT_LABELS[state.intent.intent]}`
-        : '已完成用户意图判断';
+				? `通过对您提出的问题进行分析分类，您提出的问属于"${INTENT_LABELS[state.intent.intent]}"类问题`
+				: "已完成用户意图判断";
     case 'error':
       return '意图判断失败';
     case 'abort':
@@ -325,21 +370,14 @@ function clarityDescription(state: ChatThoughtState): string {
     case 'loading':
       return '正在检查是否需要补充信息';
     case 'success': {
-      const needsClarification =
-        shouldAskFollowup(state);
-      if (needsClarification) {
-        const question = state.clarity.clarifyQuestion?.trim();
-        const suggestions = state.clarity.suggestedQuestions ?? [];
-        if (!question) {
-          return '需要补充信息';
-        }
-        return suggestions.length
-          ? `需要补充信息：${question} 可参考：${suggestions.join('；')}`
-          : `需要补充信息：${question}`;
+      const needsClarification = shouldAskFollowup(state);
+      if (needsClarification === true) {
+        return '需要补充相关信息';
       }
-      return needsClarification === false
-        ? '问题明确，无需追问'
-        : '已完成问题明确性判断';
+      if (needsClarification === false) {
+        return '问题明确，可直接进行下一步';
+      }
+      return '已完成问题明确性判断';
     }
     case 'error':
       return '问题明确性判断失败';
@@ -378,7 +416,7 @@ function thoughtAnnouncement(state: ChatThoughtState): string {
     return `深度思考：${reasoningDescription(state)}`;
   }
   if (state.clarity.status !== 'pending') {
-    return `判断问题是否明确：${clarityDescription(state)}`;
+    return `分析用户问题：${clarityDescription(state)}`;
   }
   return `判断用户意图：${intentDescription(state)}`;
 }
@@ -419,7 +457,7 @@ function ThoughtProgress({
     },
     {
       key: 'clarity',
-      title: <span className={styles.thoughtTitle}>判断问题是否明确</span>,
+      title: <span className={styles.thoughtTitle}>分析用户问题</span>,
       description: (
         <span className={styles.thoughtDescription}>
           {clarityDescription(state)}
@@ -707,12 +745,96 @@ function RelatedEntriesList({
   );
 }
 
+/**
+ * Inline clarify card (not Modal/Drawer):
+ * 1) default answer from event:clarify.question
+ * 2) mini Sender for free-form follow-up
+ * 3) Prompts chips from event:suggested_questions
+ */
+function ClarifyPanel({
+  question,
+  suggestedQuestions,
+  interactive,
+  onSubmit,
+}: {
+  question: string;
+  suggestedQuestions: string[];
+  interactive: boolean;
+  onSubmit: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  const send = (raw: string) => {
+    const text = raw.trim();
+    if (!text || !interactive) {
+      return;
+    }
+    setDraft('');
+    onSubmit(text);
+  };
+
+  return (
+    <div className={styles.clarifyPanel} role="region" aria-label="补充信息">
+      <Typography.Paragraph className={styles.clarifyQuestion}>
+        {question}
+      </Typography.Paragraph>
+
+      {interactive ? (
+        <div className={styles.clarifySenderWrap}>
+          <Sender
+            value={draft}
+            onChange={setDraft}
+            onSubmit={() => send(draft)}
+            placeholder="补充说明或直接输入更具体的问题…"
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            className={styles.clarifySender}
+          />
+        </div>
+      ) : null}
+
+      {suggestedQuestions.length > 0 ? (
+        <Prompts
+          title={
+            <span className={styles.clarifyPromptsTitle}>推荐问题</span>
+          }
+          items={suggestedQuestions.map((item, index) => ({
+            key: `sq-${index}`,
+            label: item,
+            description: item,
+          }))}
+          wrap
+          vertical={false}
+          className={styles.clarifyPrompts}
+          onItemClick={({ data }) => {
+            if (!interactive) {
+              return;
+            }
+            const text =
+              typeof data.description === 'string'
+                ? data.description
+                : typeof data.label === 'string'
+                  ? data.label
+                  : '';
+            if (text.trim()) {
+              send(text);
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function AnswerBody({
   message,
   reduceMotion,
+  clarifyInteractive,
+  onClarifySubmit,
 }: {
   message: ChatMessage;
   reduceMotion: boolean | null;
+  clarifyInteractive?: boolean;
+  onClarifySubmit?: (text: string) => void;
 }) {
   const status = message.status;
   const isStreaming = status === 'loading' || status === 'updating';
@@ -723,10 +845,32 @@ function AnswerBody({
     status === 'error' ||
     status === 'abort';
 
+  const clarity = message.thoughtState?.clarity;
+  const needsClarify =
+    Boolean(message.thoughtState) &&
+    shouldAskFollowup(message.thoughtState!) === true &&
+    clarity?.status === 'success';
+  const clarifyQuestion = clarity?.clarifyQuestion?.trim() ?? '';
+  const suggestedQuestions = clarity?.suggestedQuestions ?? [];
+  const showClarifyPanel =
+    needsClarify &&
+    Boolean(clarifyQuestion) &&
+    !message.relatedEntries &&
+    !message.thinkContent;
+
   return (
     <div className={styles.answerContent}>
       {showThoughtProgress ? (
         <ThoughtProgress message={message} reduceMotion={reduceMotion} />
+      ) : null}
+
+      {showClarifyPanel ? (
+        <ClarifyPanel
+          question={clarifyQuestion}
+          suggestedQuestions={suggestedQuestions}
+          interactive={Boolean(clarifyInteractive && onClarifySubmit)}
+          onSubmit={(text) => onClarifySubmit?.(text)}
+        />
       ) : null}
 
       {message.relatedEntries ? (
@@ -738,7 +882,8 @@ function AnswerBody({
         status === 'abort' ||
         (status === 'success' &&
           !message.relatedEntries &&
-          !message.thinkContent)) ? (
+          !message.thinkContent &&
+          !showClarifyPanel)) ? (
         <Typography.Paragraph className={styles.fallbackText}>
           {message.content}
         </Typography.Paragraph>
@@ -881,7 +1026,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             if (
               activeAnswerRef.current !== answerId ||
               (event.node !== 'intent_classify' &&
-                event.node !== 'followup_check')
+                event.node !== 'followup_check' &&
+                event.node !== 'clarify')
             ) {
               return;
             }
@@ -940,6 +1086,25 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                         message.thoughtState,
                         payload.question,
                         payload.suggestedQuestions,
+                      ),
+                      status: 'updating',
+                    }
+                  : message,
+              ),
+            );
+          },
+          onSuggestedQuestions: (questions) => {
+            if (activeAnswerRef.current !== answerId || !questions.length) {
+              return;
+            }
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === answerId
+                  ? {
+                      ...message,
+                      thoughtState: applySuggestedQuestions(
+                        message.thoughtState,
+                        questions,
                       ),
                       status: 'updating',
                     }
@@ -1046,8 +1211,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                       content:
                         error.name === 'AbortError'
                           ? message.content || '已停止生成。'
-                          : error.message ||
-                            '暂时无法连接服务，请确认后端已启动后重试。',
+                          : GENERIC_STREAM_ERROR_MESSAGE,
                     }
                   : message,
               ),
@@ -1164,6 +1328,15 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     [],
   );
 
+  const latestAnswerId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.kind === 'answer') {
+        return messages[i].id;
+      }
+    }
+    return null;
+  }, [messages]);
+
   const roleConfig: BubbleListProps['role'] = useMemo(
     () => ({
       assistant: {
@@ -1182,8 +1355,20 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           const message = info.extraInfo?.message as ChatMessage | undefined;
 
           if (kind === 'answer' && message) {
+            const clarifyInteractive =
+              !isRequesting &&
+              message.id === latestAnswerId &&
+              status === 'success' &&
+              shouldAskFollowup(message.thoughtState ?? createThoughtState()) ===
+                true;
+
             return (
-              <AnswerBody message={{ ...message, status }} reduceMotion={reduceMotion} />
+              <AnswerBody
+                message={{ ...message, status }}
+                reduceMotion={reduceMotion}
+                clarifyInteractive={clarifyInteractive}
+                onClarifySubmit={submit}
+              />
             );
           }
 
@@ -1204,7 +1389,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         classNames: { content: styles.userBubbleContent },
       },
     }),
-    [assistantAvatar, reduceMotion],
+    [assistantAvatar, isRequesting, latestAnswerId, reduceMotion, submit],
   );
 
   const bubbleItems: BubbleItemType[] = useMemo(

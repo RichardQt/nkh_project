@@ -19,40 +19,40 @@ function SidebarPanel({ activePath, onNavigate }: SidebarPanelProps) {
   const newChatActive = activePath === '/' || activePath.startsWith('/chat');
 
   return (
-    <div className={styles.sidebarPanel}>
-      <Button
-        type="text"
-        className={styles.brand}
-        onClick={() => onNavigate('/')}
-        aria-label="返回 AI 创新助手入口"
-      >
-        <span className={styles.brandMark} aria-hidden="true">
-          <RobotOutlined />
-        </span>
-        <span className={styles.brandText}>
-          <Typography.Text strong>AI 助手</Typography.Text>
-          <Typography.Text type="secondary">专注创新与研发</Typography.Text>
-        </span>
-      </Button>
+		<div className={styles.sidebarPanel}>
+			<Button
+				type="text"
+				className={styles.brand}
+				onClick={() => onNavigate("/")}
+				aria-label="返回 AI 创新助手入口"
+			>
+				<span className={styles.brandMark} aria-hidden="true">
+					<RobotOutlined />
+				</span>
+				<span className={styles.brandText}>
+					<Typography.Text strong>AI 创新助手</Typography.Text>
+					<Typography.Text type="secondary">专注创新与研发</Typography.Text>
+				</span>
+			</Button>
 
-      <nav className={styles.navigation} aria-label="主导航">
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="large"
-          block
-          ghost={!newChatActive}
-          className={styles.newChatButton}
-          onClick={() => onNavigate('/')}
-        >
-          新建对话
-        </Button>
-      </nav>
+			<nav className={styles.navigation} aria-label="主导航">
+				<Button
+					type="primary"
+					icon={<PlusOutlined />}
+					size="large"
+					block
+					ghost={!newChatActive}
+					className={styles.newChatButton}
+					onClick={() => onNavigate("/")}
+				>
+					新建对话
+				</Button>
+			</nav>
 
-      <Divider className={styles.sidebarDivider} />
-      <div className={styles.sidebarBlank} aria-hidden="true" />
-    </div>
-  );
+			<Divider className={styles.sidebarDivider} />
+			<div className={styles.sidebarBlank} aria-hidden="true" />
+		</div>
+	);
 }
 
 export default function AppShell() {

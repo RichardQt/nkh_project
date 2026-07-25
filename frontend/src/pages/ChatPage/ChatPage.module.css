@@ -140,6 +140,54 @@
   overflow-wrap: anywhere;
 }
 
+/* —— 澄清补充（内联卡片，非弹窗） —— */
+.clarifyPanel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 14px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.clarifyQuestion {
+  margin: 0 !important;
+  color: var(--text) !important;
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.clarifySenderWrap {
+  min-width: 0;
+}
+
+.clarifySender {
+  width: 100%;
+}
+
+.clarifySender :global(.ant-sender) {
+  background: var(--surface-muted) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+.clarifyPromptsTitle {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.clarifyPrompts {
+  min-width: 0;
+}
+
+.clarifyPrompts :global(.ant-prompts-item) {
+  max-width: 100%;
+}
+
 .entriesPanel {
   min-width: 0;
 }

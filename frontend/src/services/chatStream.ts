@@ -10,6 +10,8 @@ import type {
 /** null / undefined / 'general' = home brand mode, no specialist scene. */
 export type ChatAgentKey = AgentKey | 'general' | null | undefined;
 
+export const GENERIC_STREAM_ERROR_MESSAGE = '系统响应超时，请稍后重试。';
+
 interface ChatStreamInput {
   agentKey?: ChatAgentKey;
   message: string;
@@ -21,6 +23,8 @@ export interface ChatStreamCallbacks {
   onNodeStart?: (event: WorkflowNodeEvent) => void;
   onNodeEnd?: (event: WorkflowNodeEvent) => void;
   onClarify?: (payload: ClarificationPayload) => void;
+  /** Standalone recommended questions (event: suggested_questions). */
+  onSuggestedQuestions?: (questions: string[]) => void;
   onToken: (content: string) => void;
   onRelatedEntries: (payload: RelatedEntriesPayload) => void;
   onComplete: () => void;
@@ -129,6 +133,34 @@ function parseWorkflowNodeEvent(data: string): WorkflowNodeEvent | null {
   }
 }
 
+function normalizeSuggestedQuestions(raw: unknown): string[] {
+  const items: string[] = [];
+
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item === 'string' && item.trim()) {
+        items.push(item.trim());
+      }
+    }
+  } else if (typeof raw === 'string' && raw.trim()) {
+    for (const part of raw.replace(/，/g, ',').split(',')) {
+      if (part.trim()) {
+        items.push(part.trim());
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const item of items) {
+    if (!seen.has(item)) {
+      seen.add(item);
+      ordered.push(item);
+    }
+  }
+  return ordered;
+}
+
 function parseClarification(data: string): ClarificationPayload | null {
   try {
     const record = asRecord(JSON.parse(data) as unknown);
@@ -147,17 +179,28 @@ function parseClarification(data: string): ClarificationPayload | null {
       return null;
     }
 
-    const rawSuggestions = Array.isArray(record.suggested_questions)
-      ? record.suggested_questions
-      : Array.isArray(record.suggestedQuestions)
-        ? record.suggestedQuestions
-        : [];
-    const suggestedQuestions = rawSuggestions
-      .filter((item): item is string => typeof item === 'string')
-      .map((item) => item.trim())
-      .filter(Boolean);
+    const rawSuggestions =
+      record.suggested_questions ??
+      record.suggestedQuestions ??
+      record.questions;
+    const suggestedQuestions = normalizeSuggestedQuestions(rawSuggestions);
 
     return { question, suggestedQuestions };
+  } catch {
+    return null;
+  }
+}
+
+function parseSuggestedQuestions(data: string): string[] | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+    const questions = normalizeSuggestedQuestions(
+      record.questions ?? record.suggested_questions ?? record.suggestedQuestions,
+    );
+    return questions.length ? questions : null;
   } catch {
     return null;
   }
@@ -478,6 +521,17 @@ export function startChatStream(
           return true;
         }
 
+        if (
+          eventName === 'suggested_questions' ||
+          eventName === 'suggestedQuestions'
+        ) {
+          const questions = parseSuggestedQuestions(frame.data);
+          if (questions?.length) {
+            callbacks.onSuggestedQuestions?.(questions);
+          }
+          return true;
+        }
+
         if (eventName === 'token' || eventName === 'delta') {
           const content = extractContent(frame.data);
           if (content) {
@@ -502,9 +556,7 @@ export function startChatStream(
         }
 
         if (eventName === 'error') {
-          const message =
-            extractContent(frame.data) || '服务返回错误，请稍后重试。';
-          settleError(new Error(message));
+          settleError(new Error(GENERIC_STREAM_ERROR_MESSAGE));
           try {
             await reader.cancel();
           } catch {
