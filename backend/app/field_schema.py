@@ -3,7 +3,7 @@
 Aligned with repo root ``信息匹配.md``:
   - list card fields → SSE ``fields``
   - detail drawer fields → SSE ``detailFields``
-  - platform discovery is multi-section (poc_center / pilot_test_platform / …)
+  - platform discovery is multi-section (proof_of_concept_centers / pilot_test_platforms / …)
 
 Backend A decides which keys reach the frontend. Frontend only renders
 the field metadata returned in SSE (key + Chinese label).
@@ -229,25 +229,37 @@ PLATFORM_FIELD_CATALOG: tuple[FieldDef, ...] = (
 DEFAULT_PLATFORM_KEYS: tuple[str, ...] = tuple(f.key for f in PLATFORM_LIST_FIELDS)
 
 # Ordered platform sections: only non-empty ones are emitted to the frontend.
-PLATFORM_SECTION_DEFS: tuple[tuple[str, str, tuple[FieldDef, ...], tuple[FieldDef, ...]], ...] = (
-    ("poc_center", "概念验证中心", POC_CENTER_LIST_FIELDS, POC_CENTER_DETAIL_FIELDS),
+# Primary keys match Backend B related_entries; aliases keep older docs/samples working.
+PLATFORM_SECTION_DEFS: tuple[
+    tuple[str, str, tuple[FieldDef, ...], tuple[FieldDef, ...], tuple[str, ...]], ...
+] = (
     (
-        "pilot_test_platform",
+        "proof_of_concept_centers",
+        "概念验证中心",
+        POC_CENTER_LIST_FIELDS,
+        POC_CENTER_DETAIL_FIELDS,
+        ("poc_center",),
+    ),
+    (
+        "pilot_test_platforms",
         "中试平台",
         PILOT_TEST_LIST_FIELDS,
         PILOT_TEST_DETAIL_FIELDS,
+        ("pilot_test_platform",),
     ),
     (
-        "large_scale_equipment",
+        "large_equipment",
         "大型仪器设备",
         EQUIPMENT_LIST_FIELDS,
         EQUIPMENT_DETAIL_FIELDS,
+        ("large_scale_equipment",),
     ),
     (
-        "public_service_platform",
+        "public_service_platforms",
         "公共服务平台",
         PUBLIC_SERVICE_LIST_FIELDS,
         PUBLIC_SERVICE_DETAIL_FIELDS,
+        ("public_service_platform",),
     ),
 )
 
@@ -272,8 +284,8 @@ POLICY_DETAIL_FIELDS: tuple[FieldDef, ...] = ()
 # Frontend agentKey → Backend B ``function`` query param
 AGENT_FUNCTION_MAP: dict[str, str] = {
     "achievement_discover": "achievements",
-    "expert_discover": "experts",
-    "demand_discover": "demands",
+    "expert_discover": "expert_team",
+    "demand_discover": "requirements",
     "enterprise_discover": "enterprises",
     "platform_discover": "platforms",
     "policy_recommend": "policies",
@@ -284,8 +296,8 @@ AGENT_FUNCTION_MAP: dict[str, str] = {
 # function → list key aliases that may appear in upstream payload
 _FUNCTION_LIST_ALIASES: dict[str, tuple[str, ...]] = {
     "achievements": ("achievements", "items", "entries", "list"),
-    "experts": ("experts", "expert_team", "items", "entries", "list"),
-    "demands": ("demands", "requirements", "items", "entries", "list"),
+    "expert_team": ("expert_team", "experts", "items", "entries", "list"),
+    "requirements": ("requirements", "demands", "items", "entries", "list"),
     "enterprises": ("enterprises", "items", "entries", "list"),
     "platforms": ("platforms", "items", "entries", "list"),
     "policies": ("policies", "items", "entries", "list"),
@@ -309,15 +321,15 @@ _FUNCTION_SCHEMA: dict[
         ACHIEVEMENT_DISPLAY_FIELDS_RAW or None,
         DEFAULT_ACHIEVEMENT_KEYS,
     ),
-    "experts": (
-        "experts",
+    "expert_team": (
+        "expert_team",
         EXPERT_LIST_FIELDS,
         EXPERT_DETAIL_FIELDS,
         EXPERT_DISPLAY_FIELDS_RAW or None,
         DEFAULT_EXPERT_KEYS,
     ),
-    "demands": (
-        "demands",
+    "requirements": (
+        "requirements",
         DEMAND_LIST_FIELDS,
         DEMAND_DETAIL_FIELDS,
         DEMAND_DISPLAY_FIELDS_RAW or None,
@@ -396,7 +408,7 @@ def selected_fields(function: str | None) -> list[dict[str, str]]:
         # Meta/debug: all section list fields in document order
         out: list[dict[str, str]] = []
         seen: set[str] = set()
-        for _key, _label, list_fields, _detail in PLATFORM_SECTION_DEFS:
+        for _key, _label, list_fields, _detail, *_rest in PLATFORM_SECTION_DEFS:
             for f in list_fields:
                 if f.key not in seen:
                     seen.add(f.key)
@@ -456,20 +468,33 @@ def _project_platform_sections(payload: dict[str, Any]) -> dict[str, Any]:
     Upstream may return any subset of::
 
         {
-          "poc_center": [...],
-          "pilot_test_platform": [...],
-          "large_scale_equipment": [...],
-          "public_service_platform": [...]
+          "proof_of_concept_centers": [...],
+          "pilot_test_platforms": [...],
+          "large_equipment": [...],
+          "public_service_platforms": [...]
         }
 
+    Older singular keys (poc_center / pilot_test_platform / …) are still accepted.
     Fallback: a flat ``platforms`` / ``items`` list uses generic platform fields.
     """
 
     sections: list[dict[str, Any]] = []
     flat_items: list[dict[str, Any]] = []
 
-    for section_key, section_label, list_fields, detail_fields in PLATFORM_SECTION_DEFS:
+    for (
+        section_key,
+        section_label,
+        list_fields,
+        detail_fields,
+        aliases,
+    ) in PLATFORM_SECTION_DEFS:
         raw = payload.get(section_key)
+        if not isinstance(raw, list) or not raw:
+            for alias in aliases:
+                candidate = payload.get(alias)
+                if isinstance(candidate, list) and candidate:
+                    raw = candidate
+                    break
         if not isinstance(raw, list) or not raw:
             continue
         list_dicts = _fields_to_dicts(list_fields)
@@ -591,4 +616,31 @@ def project_related_entries(
 def platform_section_keys() -> tuple[str, ...]:
     """Keys that count as related list data for platform discovery."""
 
-    return tuple(key for key, *_ in PLATFORM_SECTION_DEFS)
+    keys: list[str] = []
+    for entry in PLATFORM_SECTION_DEFS:
+        # (primary, label, list_fields, detail_fields, aliases)
+        primary = entry[0]
+        aliases = entry[-1] if isinstance(entry[-1], tuple) else ()
+        keys.append(primary)
+        keys.extend(aliases)
+    # Keep a hard-coded safety net in case defs unpacking drifts.
+    keys.extend(
+        [
+            "proof_of_concept_centers",
+            "pilot_test_platforms",
+            "large_equipment",
+            "public_service_platforms",
+            "poc_center",
+            "pilot_test_platform",
+            "large_scale_equipment",
+            "public_service_platform",
+        ]
+    )
+    # de-dupe, preserve order
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for key in keys:
+        if key and key not in seen:
+            seen.add(key)
+            ordered.append(key)
+    return tuple(ordered)

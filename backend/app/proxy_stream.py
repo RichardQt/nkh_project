@@ -121,8 +121,50 @@ def _node_requests_clarification(payload: dict[str, Any]) -> bool:
     return False
 
 
+def _is_row_list(value: Any) -> bool:
+    """Non-empty list of objects counts as related_entries rows."""
+
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, dict) for item in value)
+    )
+
+
+def _payload_list_candidates(payload: dict[str, Any]) -> list[Any]:
+    """Collect list-like values that can count as related_entries rows."""
+
+    candidates: list[Any] = []
+    stack: list[Any] = [payload]
+    seen: set[int] = set()
+
+    while stack:
+        current = stack.pop()
+        if not isinstance(current, dict):
+            continue
+        ident = id(current)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        for value in current.values():
+            if isinstance(value, list):
+                candidates.append(value)
+            elif isinstance(value, dict):
+                stack.append(value)
+    return candidates
+
+
 def _has_related_items(function: str, payload: dict[str, Any]) -> bool:
-    keys = (
+    """True when payload contains at least one list of row objects.
+
+    Platforms return multi-key maps like::
+
+        {"pilot_test_platforms": [{...}], "large_equipment": [{...}]}
+
+    rather than a single ``platforms`` / ``items`` array.
+    """
+
+    known_keys = (
         function,
         "achievements",
         "experts",
@@ -135,10 +177,33 @@ def _has_related_items(function: str, payload: dict[str, Any]) -> bool:
         "items",
         "entries",
         "list",
-        # platform discovery sub-types (信息匹配.md §1.5)
         *platform_section_keys(),
     )
-    return any(key and isinstance(payload.get(key), list) for key in keys)
+    for key in known_keys:
+        if key and _is_row_list(payload.get(key)):
+            return True
+
+    # Fallback: any nested non-empty list of objects
+    return any(_is_row_list(candidate) for candidate in _payload_list_candidates(payload))
+
+
+def _unwrap_related_payload(parsed: dict[str, Any], function: str) -> dict[str, Any]:
+    """Prefer the nested object that actually holds list rows."""
+
+    if _has_related_items(function, parsed):
+        return parsed
+
+    for wrapper_key in ("data", "result", "payload", "related_entries", "body"):
+        nested = parsed.get(wrapper_key)
+        if isinstance(nested, dict) and _has_related_items(function, nested):
+            return nested
+
+    # Some gateways wrap the only list under a single dynamic key object
+    for value in parsed.values():
+        if isinstance(value, dict) and _has_related_items(function, value):
+            return value
+
+    return parsed
 
 
 async def _iter_upstream_events(
@@ -453,15 +518,75 @@ async def _handle_upstream_event(
 
     if name in ("related_entries", "related", "business", "entries"):
         parsed = _parse_json_object(raw_data)
+
+        # Allow top-level array: [{"platform_name": ...}]
+        if parsed is None:
+            try:
+                maybe_list = json.loads(raw_data) if raw_data else None
+            except json.JSONDecodeError:
+                maybe_list = None
+            if isinstance(maybe_list, list) and maybe_list:
+                list_key = function if function else "items"
+                parsed = {list_key: maybe_list, "items": maybe_list}
+
         if not parsed:
-            yield sse("error", {"message": "上游 related_entries 格式不正确。"})
-            return
-        if not _has_related_items(function, parsed):
-            yield sse("error", {"message": "上游 related_entries 缺少列表字段。"})
+            # Soft-fail: do not kill the whole stream for a bad list frame.
+            yield sse(
+                "error",
+                {"message": "上游 related_entries 格式不正确，已跳过该结果帧。"},
+            )
             return
 
-        projected = project_related_entries(function, parsed)
-        yield sse("related_entries", projected)
+        working = _unwrap_related_payload(parsed, function)
+
+        # Platforms always attempt projection, even if key names are new.
+        if function == "platforms" or _has_related_items(function, working):
+            projected = project_related_entries(function, working)
+            # If projection found nothing but raw has row lists, forward raw
+            # under a generic shell so the UI can still render.
+            if (
+                function == "platforms"
+                and not projected.get("sections")
+                and not projected.get("items")
+            ):
+                recovered_sections: list[dict[str, Any]] = []
+                for key, value in working.items():
+                    if not _is_row_list(value):
+                        continue
+                    recovered_sections.append(
+                        {
+                            "key": str(key),
+                            "label": str(key),
+                            "fields": [],
+                            "detailFields": [],
+                            "items": value,
+                        }
+                    )
+                if recovered_sections:
+                    projected = {
+                        "listKey": "platforms",
+                        "fields": [],
+                        "detailFields": [],
+                        "items": [
+                            item
+                            for section in recovered_sections
+                            for item in section["items"]
+                        ],
+                        "sections": recovered_sections,
+                    }
+            yield sse("related_entries", projected)
+            return
+
+        # Non-platform: keep a clear error, but never remap to timeout.
+        yield sse(
+            "error",
+            {
+                "message": (
+                    "上游 related_entries 缺少列表字段"
+                    f"（function={function!r}, keys={list(working.keys())[:12]}）。"
+                ),
+            },
+        )
         return
 
     # Ignore meta/ping/other upstream noise

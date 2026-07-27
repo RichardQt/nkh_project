@@ -263,6 +263,22 @@ function parseRelatedSections(
 function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
   try {
     const payload = JSON.parse(data) as unknown;
+
+    // Top-level array fallback
+    if (Array.isArray(payload)) {
+      const items = parseEntryRows(payload);
+      if (!items.length) {
+        return null;
+      }
+      return {
+        listKey: 'items',
+        fields: [],
+        detailFields: [],
+        items,
+        sections: undefined,
+      };
+    }
+
     const record = asRecord(payload);
     if (!record) {
       return null;
@@ -309,6 +325,11 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
         'demands',
         'enterprises',
         'platforms',
+        'proof_of_concept_centers',
+        'pilot_test_platforms',
+        'large_equipment',
+        'public_service_platforms',
+        // legacy singular keys
         'poc_center',
         'pilot_test_platform',
         'large_scale_equipment',
@@ -322,17 +343,27 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
     // Upstream may send platform sub-keys without a projected sections array
     if (!rawItems) {
       const platformKeys = [
+        ['proof_of_concept_centers', '概念验证中心'],
+        ['pilot_test_platforms', '中试平台'],
+        ['large_equipment', '大型仪器设备'],
+        ['public_service_platforms', '公共服务平台'],
+        // legacy singular keys
         ['poc_center', '概念验证中心'],
         ['pilot_test_platform', '中试平台'],
         ['large_scale_equipment', '大型仪器设备'],
         ['public_service_platform', '公共服务平台'],
       ] as const;
+      const seenKeys = new Set<string>();
       const inferred = platformKeys
         .map(([key, label]) => {
+          if (seenKeys.has(label)) {
+            return null;
+          }
           const items = parseEntryRows(record[key]);
           if (!items.length) {
             return null;
           }
+          seenKeys.add(label);
           return {
             key,
             label,
@@ -559,7 +590,23 @@ export function startChatStream(
         }
 
         if (eventName === 'error') {
-          settleError(new Error(GENERIC_STREAM_ERROR_MESSAGE));
+          let message = GENERIC_STREAM_ERROR_MESSAGE;
+          try {
+            const payload = asRecord(JSON.parse(frame.data) as unknown);
+            const upstream =
+              (typeof payload?.message === 'string' && payload.message.trim()) ||
+              (typeof payload?.detail === 'string' && payload.detail.trim()) ||
+              (typeof payload?.error === 'string' && payload.error.trim()) ||
+              '';
+            if (upstream) {
+              message = upstream;
+            }
+          } catch {
+            if (frame.data?.trim()) {
+              message = frame.data.trim();
+            }
+          }
+          settleError(new Error(message));
           try {
             await reader.cancel();
           } catch {

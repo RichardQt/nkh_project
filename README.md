@@ -113,8 +113,8 @@ SSE 协议处理顺序：
 | agentKey | function |
 |----------|----------|
 | achievement_discover | achievements |
-| expert_discover | experts |
-| demand_discover | demands |
+| expert_discover | expert_team |
+| demand_discover | requirements |
 | enterprise_discover | enterprises |
 | platform_discover | platforms |
 | policy_recommend | policies |

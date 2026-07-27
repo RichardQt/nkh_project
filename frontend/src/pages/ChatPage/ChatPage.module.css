@@ -69,6 +69,52 @@
   gap: 14px;
 }
 
+.answerSegment {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Inline follow-up rounds stay inside the same assistant bubble */
+.answerTurn {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 2px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.answerTurnQuestion {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--primary-soft) 55%, var(--surface-muted));
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border));
+  border-radius: var(--radius-sm);
+}
+
+.answerTurnLabel {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.answerTurnText {
+  margin: 0 !important;
+  color: var(--text) !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .thoughtPanel {
   width: 100%;
   padding: 12px 14px 2px;
@@ -449,9 +495,10 @@
   gap: 8px;
   align-items: center;
   margin-bottom: 8px !important;
-  color: var(--text) !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.015em;
 }
 
 .entryHint {

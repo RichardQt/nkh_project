@@ -31,6 +31,7 @@ import {
 } from '../../services/chatStream';
 import type { AgentKey } from '../../types/agent';
 import type {
+  AnswerTurn,
   ChatMessage,
   ClarificationPayload,
   ChatMessageStatus,
@@ -130,6 +131,63 @@ function createThoughtState(): ChatThoughtState {
     intent: { status: 'loading' },
     clarity: { status: 'pending' },
     reasoning: { status: 'pending' },
+  };
+}
+
+function createAnswerTurn(id: string, question: string): AnswerTurn {
+  return {
+    id,
+    question,
+    content: '',
+    thinkContent: '',
+    thoughtState: createThoughtState(),
+    status: 'loading',
+  };
+}
+
+/** Patch either the root assistant message or one of its inline turns. */
+function updateActiveTarget(
+  messages: ChatMessage[],
+  answerId: string,
+  turnId: string | null,
+  updater: (target: ChatMessage | AnswerTurn) => ChatMessage | AnswerTurn,
+): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.id !== answerId) {
+      return message;
+    }
+    if (!turnId) {
+      return updater(message) as ChatMessage;
+    }
+    return {
+      ...message,
+      turns: (message.turns ?? []).map((turn) =>
+        turn.id === turnId ? (updater(turn) as AnswerTurn) : turn,
+      ),
+    };
+  });
+}
+
+function finalizeStreamTarget(
+  target: ChatMessage | AnswerTurn,
+): ChatMessage | AnswerTurn {
+  const hasOutput =
+    Boolean(target.thinkContent?.trim()) || Boolean(target.relatedEntries);
+  const isClarificationResponse =
+    target.thoughtState?.clarity.status === 'success' &&
+    shouldAskFollowup(target.thoughtState) === true;
+  const completedCleanly = hasOutput || isClarificationResponse;
+
+  return {
+    ...target,
+    status: completedCleanly ? 'success' : 'error',
+    thoughtState: completedCleanly
+      ? completeThoughtState(target.thoughtState, hasOutput)
+      : stopThoughtState(target.thoughtState, 'error'),
+    content: completedCleanly
+      ? target.content
+      : target.content ||
+        '处理流程提前结束，暂时没有可展示的内容，请重试。',
   };
 }
 
@@ -260,6 +318,7 @@ function updateThoughtNode(
       return requestClarification(current, clarifyQuestion);
     }
 
+    // 问题已明确，但仍需等 retrieval 的关键词再标记 success
     return {
       ...current,
       intent: {
@@ -268,21 +327,38 @@ function updateThoughtNode(
       },
       clarity: {
         ...current.clarity,
-        status: 'success',
+        status: 'loading',
         needClarify: needClarify ?? false,
         clarificationRequested: false,
         clarifyQuestion,
         isFollowup,
       },
-      reasoning:
-        current.reasoning.status === 'pending'
-          ? { status: 'loading' }
-          : current.reasoning,
+      reasoning: current.reasoning,
     };
   }
 
-  // retrieval 节点：拿到优化后的查询关键词
-  if (event.node === 'retrieval' && phase === 'end') {
+  // retrieval 节点：拿到优化后的查询关键词后，才完成「分析用户问题」
+  if (event.node === 'retrieval') {
+    if (phase === 'start') {
+      return {
+        ...current,
+        intent: {
+          ...current.intent,
+          status: completePrecedingStep(current.intent.status),
+        },
+        clarity: {
+          ...current.clarity,
+          status: startThoughtStep(current.clarity.status),
+        },
+      };
+    }
+
+    const optimizedQuery =
+      event.optimizedQuery?.trim() || current.clarity.optimizedQuery;
+    const needClarify = event.needClarify ?? current.clarity.needClarify;
+    const clarityDone =
+      Boolean(optimizedQuery) || needClarify === true;
+
     return {
       ...current,
       intent: {
@@ -293,10 +369,16 @@ function updateThoughtNode(
       },
       clarity: {
         ...current.clarity,
-        status: completePrecedingStep(current.clarity.status),
-        needClarify: event.needClarify ?? current.clarity.needClarify,
-        optimizedQuery: event.optimizedQuery?.trim() || current.clarity.optimizedQuery,
+        status: clarityDone ? 'success' : 'loading',
+        needClarify,
+        optimizedQuery,
       },
+      reasoning:
+        clarityDone &&
+        needClarify !== true &&
+        current.reasoning.status === 'pending'
+          ? { status: 'loading' }
+          : current.reasoning,
     };
   }
 
@@ -307,6 +389,11 @@ function activateReasoning(
   state: ChatThoughtState | undefined,
 ): ChatThoughtState {
   const current = state ?? createThoughtState();
+  const clarityReady =
+    current.clarity.status === 'success' ||
+    Boolean(current.clarity.optimizedQuery?.trim()) ||
+    shouldAskFollowup(current) === true;
+
   return {
     intent: {
       ...current.intent,
@@ -314,7 +401,10 @@ function activateReasoning(
     },
     clarity: {
       ...current.clarity,
-      status: completePrecedingStep(current.clarity.status),
+      // 有关键词或确认需澄清时才收成 success；否则保持 loading + blink
+      status: clarityReady
+        ? completePrecedingStep(current.clarity.status)
+        : startThoughtStep(current.clarity.status),
     },
     reasoning: { status: 'loading' },
   };
@@ -327,11 +417,20 @@ function completeThoughtState(
   const current = state ?? createThoughtState();
   const needsClarification =
     shouldAskFollowup(current) ?? false;
+  const hasKeywords = Boolean(current.clarity.optimizedQuery?.trim());
   const reasoningStatus =
     current.reasoning.status === 'loading' ||
     (current.reasoning.status === 'pending' && hasOutput && !needsClarification)
       ? 'success'
       : current.reasoning.status;
+
+  // 分析步骤：有关键词 / 需澄清 / 已有输出时再收成 success，避免闪过“问题明确…”
+  let clarityStatus = current.clarity.status;
+  if (clarityStatus === 'loading') {
+    if (needsClarification || hasKeywords || hasOutput) {
+      clarityStatus = 'success';
+    }
+  }
 
   return {
     intent: {
@@ -340,10 +439,7 @@ function completeThoughtState(
     },
     clarity: {
       ...current.clarity,
-      status:
-        current.clarity.status === 'loading'
-          ? 'success'
-          : current.clarity.status,
+      status: clarityStatus,
     },
     reasoning: { status: reasoningStatus },
   };
@@ -417,7 +513,7 @@ function intentDescription(state: ChatThoughtState): ReactNode {
 function clarityDescription(state: ChatThoughtState): ReactNode {
   switch (state.clarity.status) {
     case 'loading':
-      return '正在检查是否需要补充信息';
+      return '正在分析用户问题';
     case 'success': {
       const needsClarification = shouldAskFollowup(state);
       if (needsClarification === true) {
@@ -428,23 +524,20 @@ function clarityDescription(state: ChatThoughtState): ReactNode {
       if (keywordList.length > 0) {
         return (
           <>
-            用户问题明确，与
+            用户问题分析成功，与
             <span className={styles.thoughtHighlight}>
               {keywordList.join('、')}
             </span>
-            关键词有关
+            关键词相关
           </>
         );
       }
-      if (needsClarification === false) {
-        return '问题明确，可直接进行下一步';
-      }
-      return '已完成问题明确性判断';
+      return '用户问题分析成功';
     }
     case 'error':
-      return '问题明确性判断失败';
+      return '用户问题分析失败';
     case 'abort':
-      return '已停止问题明确性判断';
+      return '已停止分析用户问题';
     default:
       return '等待意图判断完成';
   }
@@ -477,6 +570,9 @@ function thoughtAnnouncement(state: ChatThoughtState): string {
   if (state.reasoning.status !== 'pending') {
     return `深度思考：${reasoningDescription(state)}`;
   }
+  if (state.clarity.status === 'loading') {
+    return '分析用户问题：正在分析用户问题';
+  }
   if (state.clarity.status !== 'pending') {
     const keywords =
       state.clarity.optimizedQuery?.split(/\s+/).filter(Boolean).join('、') ??
@@ -485,12 +581,12 @@ function thoughtAnnouncement(state: ChatThoughtState): string {
       return '分析用户问题：需要补充相关信息';
     }
     if (keywords) {
-      return `分析用户问题：用户问题明确，与${keywords}关键词有关`;
+      return `分析用户问题：用户问题分析成功，与${keywords}关键词相关`;
     }
-    if (shouldAskFollowup(state) === false) {
-      return '分析用户问题：问题明确，可直接进行下一步';
+    if (state.clarity.status === 'success') {
+      return '分析用户问题：用户问题分析成功';
     }
-    return '分析用户问题：已完成问题明确性判断';
+    return '分析用户问题：正在分析用户问题';
   }
   const label =
     state.intent.intent && INTENT_LABELS[state.intent.intent]
@@ -701,7 +797,8 @@ function RelatedEntriesList({
         ];
 
   const totalCount = sections.reduce((sum, s) => sum + s.items.length, 0);
-  const multiSection = Boolean(payload.sections && payload.sections.length > 0);
+  // Platforms may return multiple types; always show each type label when present.
+  const multiSection = sections.length > 1 || Boolean(payload.sections?.length);
 
   if (!totalCount) {
     return (
@@ -967,41 +1064,50 @@ function FollowupPrompts({
   );
 }
 
-function AnswerBody({
-  message,
+function segmentNeedsClarify(target: ChatMessage | AnswerTurn): boolean {
+  const clarity = target.thoughtState?.clarity;
+  return (
+    Boolean(target.thoughtState) &&
+    shouldAskFollowup(target.thoughtState!) === true &&
+    clarity?.status === 'success'
+  );
+}
+
+function AnswerSegment({
+  target,
   reduceMotion,
   clarifyInteractive,
   promptsInteractive,
   onClarifySubmit,
+  onRecommendSubmit,
 }: {
-  message: ChatMessage;
+  target: ChatMessage | AnswerTurn;
   reduceMotion: boolean | null;
   clarifyInteractive?: boolean;
-  /** Latest successful answer can click follow-up chips. */
   promptsInteractive?: boolean;
+  /** Clarify panel → stays inside the current bubble. */
   onClarifySubmit?: (text: string) => void;
+  /** Recommended questions after a normal answer → new chat bubbles. */
+  onRecommendSubmit?: (text: string) => void;
 }) {
-  const status = message.status;
+  const status = target.status;
   const isStreaming = status === 'loading' || status === 'updating';
   const showThoughtProgress =
-    Boolean(message.thoughtState) ||
-    Boolean(message.thinkContent) ||
+    Boolean(target.thoughtState) ||
+    Boolean(target.thinkContent) ||
     isStreaming ||
     status === 'error' ||
     status === 'abort';
 
-  const clarity = message.thoughtState?.clarity;
-  const needsClarify =
-    Boolean(message.thoughtState) &&
-    shouldAskFollowup(message.thoughtState!) === true &&
-    clarity?.status === 'success';
+  const clarity = target.thoughtState?.clarity;
+  const needsClarify = segmentNeedsClarify(target);
   const clarifyQuestion = clarity?.clarifyQuestion?.trim() ?? '';
   const suggestedQuestions = clarity?.suggestedQuestions ?? [];
   const showClarifyPanel =
     needsClarify &&
     Boolean(clarifyQuestion) &&
-    !message.relatedEntries &&
-    !message.thinkContent;
+    !target.relatedEntries &&
+    !target.thinkContent;
 
   // 正常回答结束后展示推荐问题（与澄清面板互斥）
   const showFollowupPrompts =
@@ -1009,12 +1115,15 @@ function AnswerBody({
     !needsClarify &&
     status === 'success' &&
     suggestedQuestions.length > 0 &&
-    (Boolean(message.relatedEntries) || Boolean(message.thinkContent));
+    (Boolean(target.relatedEntries) || Boolean(target.thinkContent));
+
+  // ThoughtProgress expects ChatMessage-shaped fields; AnswerTurn is compatible enough.
+  const progressMessage = target as ChatMessage;
 
   return (
-    <div className={styles.answerContent}>
+    <div className={styles.answerSegment}>
       {showThoughtProgress ? (
-        <ThoughtProgress message={message} reduceMotion={reduceMotion} />
+        <ThoughtProgress message={progressMessage} reduceMotion={reduceMotion} />
       ) : null}
 
       {showClarifyPanel ? (
@@ -1026,29 +1135,97 @@ function AnswerBody({
         />
       ) : null}
 
-      {message.relatedEntries ? (
-        <RelatedEntriesList payload={message.relatedEntries} />
+      {target.relatedEntries ? (
+        <RelatedEntriesList payload={target.relatedEntries} />
       ) : null}
 
       {showFollowupPrompts ? (
         <FollowupPrompts
           questions={suggestedQuestions}
-          interactive={Boolean(promptsInteractive && onClarifySubmit)}
-          onSubmit={onClarifySubmit}
+          interactive={Boolean(promptsInteractive && onRecommendSubmit)}
+          onSubmit={onRecommendSubmit}
         />
       ) : null}
 
-      {message.content &&
+      {target.content &&
       (status === 'error' ||
         status === 'abort' ||
         (status === 'success' &&
-          !message.relatedEntries &&
-          !message.thinkContent &&
+          !target.relatedEntries &&
+          !target.thinkContent &&
           !showClarifyPanel)) ? (
         <Typography.Paragraph className={styles.fallbackText}>
-          {message.content}
+          {target.content}
         </Typography.Paragraph>
       ) : null}
+    </div>
+  );
+}
+
+function AnswerBody({
+  message,
+  reduceMotion,
+  interactive,
+  onClarifySubmit,
+  onRecommendSubmit,
+}: {
+  message: ChatMessage;
+  reduceMotion: boolean | null;
+  /** Latest answer bubble can accept clarify / recommended follow-ups. */
+  interactive?: boolean;
+  /** Clarify（需要补充信息）→ stays inside current bubble. */
+  onClarifySubmit?: (text: string) => void;
+  /** Recommended questions after normal answer → new chat bubbles. */
+  onRecommendSubmit?: (text: string) => void;
+}) {
+  const turns = message.turns ?? [];
+  const latestTarget: ChatMessage | AnswerTurn =
+    turns.length > 0 ? turns[turns.length - 1]! : message;
+  const latestStreaming =
+    latestTarget.status === 'loading' || latestTarget.status === 'updating';
+  const canInteract =
+    Boolean(interactive && (onClarifySubmit || onRecommendSubmit)) &&
+    !latestStreaming &&
+    latestTarget.status === 'success';
+
+  const rootInteractive = canInteract && turns.length === 0;
+  const rootNeedsClarify = segmentNeedsClarify(message);
+
+  return (
+    <div className={styles.answerContent}>
+      <AnswerSegment
+        target={message}
+        reduceMotion={reduceMotion}
+        clarifyInteractive={rootInteractive && rootNeedsClarify}
+        promptsInteractive={rootInteractive && !rootNeedsClarify}
+        onClarifySubmit={onClarifySubmit}
+        onRecommendSubmit={onRecommendSubmit}
+      />
+
+      {turns.map((turn, index) => {
+        const isLatestTurn = index === turns.length - 1;
+        const turnInteractive = canInteract && isLatestTurn;
+        const turnNeedsClarify = segmentNeedsClarify(turn);
+
+        return (
+          <div key={turn.id} className={styles.answerTurn}>
+            <div className={styles.answerTurnQuestion} role="note">
+              <span className={styles.answerTurnLabel}>你的补充</span>
+              <Typography.Text className={styles.answerTurnText}>
+                {turn.question}
+              </Typography.Text>
+            </div>
+            <AnswerSegment
+              target={turn}
+              reduceMotion={reduceMotion}
+              clarifyInteractive={turnInteractive && turnNeedsClarify}
+              promptsInteractive={turnInteractive && !turnNeedsClarify}
+              onClarifySubmit={onClarifySubmit}
+              onRecommendSubmit={onRecommendSubmit}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1078,9 +1255,12 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       kind: 'intro',
     },
   ]);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const requestRef = useRef<ChatStreamController | null>(null);
   const bubbleListRef = useRef<ComponentRef<typeof Bubble.List>>(null);
   const activeAnswerRef = useRef<string | null>(null);
+  const activeTurnRef = useRef<string | null>(null);
   const isRequestingRef = useRef(false);
   const messageSequenceRef = useRef(0);
   const shouldFollowOutputRef = useRef(true);
@@ -1112,26 +1292,199 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
 
   const cancelRequest = useCallback(() => {
     const activeAnswerId = activeAnswerRef.current;
+    const activeTurnId = activeTurnRef.current;
     activeAnswerRef.current = null;
+    activeTurnRef.current = null;
     requestRef.current?.abort();
     requestRef.current = null;
     setRequesting(false);
 
     if (activeAnswerId) {
       setMessages((current) =>
-        current.map((message) =>
-          message.id === activeAnswerId
-            ? {
-                ...message,
-                status: 'abort',
-                content: message.content || '已停止生成。',
-                thoughtState: stopThoughtState(message.thoughtState, 'abort'),
-              }
-            : message,
-        ),
+        updateActiveTarget(current, activeAnswerId, activeTurnId, (target) => ({
+          ...target,
+          status: 'abort',
+          content: target.content || '已停止生成。',
+          thoughtState: stopThoughtState(target.thoughtState, 'abort'),
+        })),
       );
     }
   }, [setRequesting]);
+
+  const beginStream = useCallback(
+    (answerId: string, turnId: string | null, question: string) => {
+      setRequesting(true);
+      activeAnswerRef.current = answerId;
+      activeTurnRef.current = turnId;
+      shouldFollowOutputRef.current = true;
+
+      const isActiveTarget = () =>
+        activeAnswerRef.current === answerId &&
+        activeTurnRef.current === turnId;
+
+      const patchTarget = (
+        updater: (target: ChatMessage | AnswerTurn) => ChatMessage | AnswerTurn,
+      ) => {
+        setMessages((current) =>
+          updateActiveTarget(current, answerId, turnId, updater),
+        );
+      };
+
+      requestRef.current = startChatStream(
+        {
+          agentKey,
+          message: question,
+          sessionId: sessionIdRef.current,
+        },
+        {
+          onMeta: ({ fields }) => {
+            if (!isActiveTarget() || !fields?.length) {
+              return;
+            }
+            patchTarget((target) => ({ ...target, displayFields: fields }));
+          },
+          onNodeStart: (event) => {
+            if (
+              !isActiveTarget() ||
+              (event.node !== 'intent_classify' &&
+                event.node !== 'followup_check' &&
+                event.node !== 'clarify' &&
+                event.node !== 'retrieval')
+            ) {
+              return;
+            }
+            patchTarget((target) => ({
+              ...target,
+              thoughtState: updateThoughtNode(
+                target.thoughtState,
+                event,
+                'start',
+              ),
+              status: 'updating',
+            }));
+          },
+          onNodeEnd: (event) => {
+            if (
+              !isActiveTarget() ||
+              (event.node !== 'intent_classify' &&
+                event.node !== 'followup_check' &&
+                event.node !== 'clarify' &&
+                event.node !== 'retrieval')
+            ) {
+              return;
+            }
+            patchTarget((target) => ({
+              ...target,
+              thoughtState: updateThoughtNode(
+                target.thoughtState,
+                event,
+                'end',
+              ),
+              status: 'updating',
+            }));
+          },
+          onClarify: (payload: ClarificationPayload) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+            patchTarget((target) => ({
+              ...target,
+              thoughtState: requestClarification(
+                target.thoughtState,
+                payload.question,
+                payload.suggestedQuestions,
+              ),
+              status: 'updating',
+            }));
+          },
+          onSuggestedQuestions: (questions) => {
+            if (!isActiveTarget() || !questions.length) {
+              return;
+            }
+            patchTarget((target) => ({
+              ...target,
+              thoughtState: applySuggestedQuestions(
+                target.thoughtState,
+                questions,
+              ),
+              status: 'updating',
+            }));
+          },
+          onToken: (content) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+            patchTarget((target) => ({
+              ...target,
+              thinkContent: `${target.thinkContent ?? ''}${content}`,
+              thoughtState: activateReasoning(target.thoughtState),
+              status: 'updating',
+            }));
+          },
+          onRelatedEntries: (payload) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+            patchTarget((target) => ({
+              ...target,
+              relatedEntries: payload,
+              thoughtState: activateReasoning(target.thoughtState),
+              displayFields: payload.fields.length
+                ? payload.fields
+                : target.displayFields,
+              status: 'updating',
+            }));
+          },
+          onComplete: () => {
+            if (!isActiveTarget()) {
+              return;
+            }
+
+            activeAnswerRef.current = null;
+            activeTurnRef.current = null;
+            requestRef.current = null;
+            setRequesting(false);
+            sessionStorage.removeItem(pendingStorageKey(sessionKey));
+            setMessages((current) =>
+              updateActiveTarget(current, answerId, turnId, finalizeStreamTarget),
+            );
+          },
+          onError: (error) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+
+            activeAnswerRef.current = null;
+            activeTurnRef.current = null;
+            requestRef.current = null;
+            setRequesting(false);
+            if (error.name !== 'AbortError') {
+              sessionStorage.removeItem(pendingStorageKey(sessionKey));
+            }
+            const fallbackMessage =
+              error.name === 'AbortError'
+                ? '已停止生成。'
+                : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
+            setMessages((current) =>
+              updateActiveTarget(current, answerId, turnId, (target) => ({
+                ...target,
+                status: error.name === 'AbortError' ? 'abort' : 'error',
+                thoughtState: stopThoughtState(
+                  target.thoughtState,
+                  error.name === 'AbortError' ? 'abort' : 'error',
+                ),
+                content:
+                  error.name === 'AbortError'
+                    ? target.content || fallbackMessage
+                    : fallbackMessage,
+              })),
+            );
+          },
+        },
+      );
+    },
+    [agentKey, sessionKey, setRequesting],
+  );
 
   const submit = useCallback(
     (rawQuestion: string) => {
@@ -1144,9 +1497,6 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       const answerId = nextMessageId('assistant');
 
       setValue('');
-      setRequesting(true);
-      activeAnswerRef.current = answerId;
-      shouldFollowOutputRef.current = true;
       setMessages((current) => [
         ...current.filter((message) => message.kind !== 'intro'),
         {
@@ -1165,231 +1515,51 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           status: 'loading',
           kind: 'answer',
           sourceQuestion: question,
+          turns: [],
         },
       ]);
-
-      requestRef.current = startChatStream(
-        {
-          agentKey,
-          message: question,
-          sessionId: sessionIdRef.current,
-        },
-        {
-          onMeta: ({ fields }) => {
-            if (activeAnswerRef.current !== answerId || !fields?.length) {
-              return;
-            }
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? { ...message, displayFields: fields }
-                  : message,
-              ),
-            );
-          },
-          onNodeStart: (event) => {
-            if (
-              activeAnswerRef.current !== answerId ||
-              (event.node !== 'intent_classify' &&
-                event.node !== 'followup_check' &&
-                event.node !== 'clarify' &&
-                event.node !== 'retrieval')
-            ) {
-              return;
-            }
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      thoughtState: updateThoughtNode(
-                        message.thoughtState,
-                        event,
-                        'start',
-                      ),
-                      status: 'updating',
-                    }
-                  : message,
-              ),
-            );
-          },
-          onNodeEnd: (event) => {
-            if (
-              activeAnswerRef.current !== answerId ||
-              (event.node !== 'intent_classify' &&
-                event.node !== 'followup_check' &&
-                event.node !== 'clarify' &&
-                event.node !== 'retrieval')
-            ) {
-              return;
-            }
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      thoughtState: updateThoughtNode(
-                        message.thoughtState,
-                        event,
-                        'end',
-                      ),
-                      status: 'updating',
-                    }
-                  : message,
-              ),
-            );
-          },
-          onClarify: (payload: ClarificationPayload) => {
-            if (activeAnswerRef.current !== answerId) {
-              return;
-            }
-
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      thoughtState: requestClarification(
-                        message.thoughtState,
-                        payload.question,
-                        payload.suggestedQuestions,
-                      ),
-                      status: 'updating',
-                    }
-                  : message,
-              ),
-            );
-          },
-          onSuggestedQuestions: (questions) => {
-            if (activeAnswerRef.current !== answerId || !questions.length) {
-              return;
-            }
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      thoughtState: applySuggestedQuestions(
-                        message.thoughtState,
-                        questions,
-                      ),
-                      status: 'updating',
-                    }
-                  : message,
-              ),
-            );
-          },
-          onToken: (content) => {
-            if (activeAnswerRef.current !== answerId) {
-              return;
-            }
-
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      thinkContent: `${message.thinkContent ?? ''}${content}`,
-                      thoughtState: activateReasoning(message.thoughtState),
-                      status: 'updating',
-                    }
-                  : message,
-              ),
-            );
-          },
-          onRelatedEntries: (payload) => {
-            if (activeAnswerRef.current !== answerId) {
-              return;
-            }
-
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      relatedEntries: payload,
-                      thoughtState: activateReasoning(message.thoughtState),
-                      displayFields: payload.fields.length
-                        ? payload.fields
-                        : message.displayFields,
-                      status: 'updating',
-                    }
-                  : message,
-              ),
-            );
-          },
-          onComplete: () => {
-            if (activeAnswerRef.current !== answerId) {
-              return;
-            }
-
-            activeAnswerRef.current = null;
-            requestRef.current = null;
-            setRequesting(false);
-            sessionStorage.removeItem(pendingStorageKey(sessionKey));
-            setMessages((current) =>
-              current.map((message) => {
-                if (message.id !== answerId) {
-                  return message;
-                }
-                const hasOutput =
-                  Boolean(message.thinkContent?.trim()) ||
-                  Boolean(message.relatedEntries);
-                const isClarificationResponse =
-                  message.thoughtState?.clarity.status === 'success' &&
-                  shouldAskFollowup(message.thoughtState) === true;
-                const completedCleanly = hasOutput || isClarificationResponse;
-
-                return {
-                  ...message,
-                  status: completedCleanly ? 'success' : 'error',
-                  thoughtState: completedCleanly
-                    ? completeThoughtState(message.thoughtState, hasOutput)
-                    : stopThoughtState(message.thoughtState, 'error'),
-                  content: completedCleanly
-                    ? message.content
-                    : message.content ||
-                      '处理流程提前结束，暂时没有可展示的内容，请重试。',
-                };
-              }),
-            );
-          },
-          onError: (error) => {
-            if (activeAnswerRef.current !== answerId) {
-              return;
-            }
-
-            activeAnswerRef.current = null;
-            requestRef.current = null;
-            setRequesting(false);
-            if (error.name !== 'AbortError') {
-              sessionStorage.removeItem(pendingStorageKey(sessionKey));
-            }
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === answerId
-                  ? {
-                      ...message,
-                      status: error.name === 'AbortError' ? 'abort' : 'error',
-                      thoughtState: stopThoughtState(
-                        message.thoughtState,
-                        error.name === 'AbortError' ? 'abort' : 'error',
-                      ),
-                      content:
-                        error.name === 'AbortError'
-                          ? message.content || '已停止生成。'
-                          : GENERIC_STREAM_ERROR_MESSAGE,
-                    }
-                  : message,
-              ),
-            );
-          },
-        },
-      );
-
+      beginStream(answerId, null, question);
       return true;
     },
-    [agentKey, nextMessageId, sessionKey, setRequesting],
+    [beginStream, nextMessageId],
+  );
+
+  /**
+   * Continue inside the current assistant bubble instead of opening a new pair.
+   * Used by clarify panel / recommended-question chips.
+   */
+  const submitInline = useCallback(
+    (answerId: string, rawQuestion: string) => {
+      const question = rawQuestion.trim();
+      if (!question || isRequestingRef.current || activeAnswerRef.current) {
+        return false;
+      }
+
+      const target = messagesRef.current.find(
+        (message) => message.id === answerId && message.kind === 'answer',
+      );
+      if (!target) {
+        return false;
+      }
+
+      const turnId = nextMessageId('turn');
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === answerId
+            ? {
+                ...message,
+                turns: [
+                  ...(message.turns ?? []),
+                  createAnswerTurn(turnId, question),
+                ],
+              }
+            : message,
+        ),
+      );
+      beginStream(answerId, turnId, question);
+      return true;
+    },
+    [beginStream, nextMessageId],
   );
 
   useEffect(() => {
@@ -1429,6 +1599,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         active?.abort();
       }, 0);
       activeAnswerRef.current = null;
+      activeTurnRef.current = null;
       isRequestingRef.current = false;
       requestRef.current = null;
     },
@@ -1517,28 +1688,29 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           content: styles.assistantBubbleContent,
         },
         contentRender: (_content, info) => {
-          const status = (info.status ?? 'success') as ChatMessageStatus;
           const kind = info.extraInfo?.kind;
           const message = info.extraInfo?.message as ChatMessage | undefined;
 
           if (kind === 'answer' && message) {
-            const isLatestSuccess =
+            const turns = message.turns ?? [];
+            const latestTarget =
+              turns.length > 0 ? turns[turns.length - 1]! : message;
+            const latestDone =
+              latestTarget.status === 'success' ||
+              latestTarget.status === 'error' ||
+              latestTarget.status === 'abort';
+            const interactive =
               !isRequesting &&
               message.id === latestAnswerId &&
-              status === 'success';
-            const clarifyInteractive =
-              isLatestSuccess &&
-              shouldAskFollowup(message.thoughtState ?? createThoughtState()) ===
-                true;
-            const promptsInteractive = isLatestSuccess;
+              latestDone;
 
             return (
               <AnswerBody
-                message={{ ...message, status }}
+                message={message}
                 reduceMotion={reduceMotion}
-                clarifyInteractive={clarifyInteractive}
-                promptsInteractive={promptsInteractive}
-                onClarifySubmit={submit}
+                interactive={interactive}
+                onClarifySubmit={(text) => submitInline(message.id, text)}
+                onRecommendSubmit={submit}
               />
             );
           }
@@ -1560,24 +1732,38 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         classNames: { content: styles.userBubbleContent },
       },
     }),
-    [assistantAvatar, isRequesting, latestAnswerId, reduceMotion, submit],
+    [assistantAvatar, isRequesting, latestAnswerId, reduceMotion, submit, submitInline],
   );
 
   const bubbleItems: BubbleItemType[] = useMemo(
     () =>
       messages.map((message) => {
         const isIntro = message.kind === 'intro';
+        const turns = message.turns ?? [];
+        const latestTarget =
+          message.kind === 'answer' && turns.length > 0
+            ? turns[turns.length - 1]!
+            : message;
         const isCompletedAnswer =
-          message.kind === 'answer' && message.status === 'success';
+          message.kind === 'answer' && latestTarget.status === 'success';
+        const isStreamingAnswer =
+          message.kind === 'answer' &&
+          (latestTarget.status === 'loading' ||
+            latestTarget.status === 'updating');
 
-        const copyText = [
-          message.thinkContent,
-          message.thoughtState?.clarity.clarifyQuestion,
-          (() => {
-            const related = message.relatedEntries;
-            if (!related) {
-              return '';
-            }
+        const copyParts: string[] = [];
+        const collectCopy = (target: ChatMessage | AnswerTurn, question?: string) => {
+          if (question) {
+            copyParts.push(`补充：${question}`);
+          }
+          if (target.thinkContent) {
+            copyParts.push(target.thinkContent);
+          }
+          if (target.thoughtState?.clarity.clarifyQuestion) {
+            copyParts.push(target.thoughtState.clarity.clarifyQuestion);
+          }
+          if (target.relatedEntries) {
+            const related = target.relatedEntries;
             const sections =
               related.sections && related.sections.length > 0
                 ? related.sections
@@ -1589,36 +1775,49 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                       items: related.items,
                     },
                   ];
-            return sections
-              .map((section) => {
-                const body = section.items
-                  .map((row, i) => {
-                    const allFields = [
-                      ...section.fields,
-                      ...(section.detailFields ?? []),
-                    ];
-                    const lines = allFields.map(
-                      (f) => `${f.label}: ${formatCellValue(row[f.key])}`,
-                    );
-                    return [`#${i + 1}`, ...lines].join('\n');
-                  })
-                  .join('\n\n');
-                return section.label ? `${section.label}\n${body}` : body;
-              })
-              .join('\n\n');
-          })(),
-          message.content,
-        ]
-          .filter(Boolean)
-          .join('\n\n');
+            copyParts.push(
+              sections
+                .map((section) => {
+                  const body = section.items
+                    .map((row, i) => {
+                      const allFields = [
+                        ...section.fields,
+                        ...(section.detailFields ?? []),
+                      ];
+                      const lines = allFields.map(
+                        (f) => `${f.label}: ${formatCellValue(row[f.key])}`,
+                      );
+                      return [`#${i + 1}`, ...lines].join('\n');
+                    })
+                    .join('\n\n');
+                  return section.label ? `${section.label}\n${body}` : body;
+                })
+                .join('\n\n'),
+            );
+          }
+          if (target.content) {
+            copyParts.push(target.content);
+          }
+        };
+
+        if (message.kind === 'answer') {
+          collectCopy(message);
+          for (const turn of turns) {
+            collectCopy(turn, turn.question);
+          }
+        } else if (message.content) {
+          copyParts.push(message.content);
+        }
+
+        const copyText = copyParts.filter(Boolean).join('\n\n');
 
         const baseItem: BubbleItemType = {
           key: message.id,
           role: message.role,
           content: message.content,
-          status: message.status,
+          status: latestTarget.status,
           loading: false,
-          streaming: message.status === 'updating',
+          streaming: isStreamingAnswer,
           extraInfo: { kind: message.kind, message },
         };
 

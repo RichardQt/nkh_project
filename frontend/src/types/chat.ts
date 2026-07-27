@@ -91,6 +91,20 @@ export interface ChatThoughtState {
   };
 }
 
+/** One inline follow-up round rendered inside the same assistant bubble. */
+export interface AnswerTurn {
+  id: string;
+  /** User text that started this follow-up. */
+  question: string;
+  /** Fallback / error plain text. */
+  content: string;
+  status: ChatMessageStatus;
+  thinkContent?: string;
+  thoughtState?: ChatThoughtState;
+  relatedEntries?: RelatedEntriesPayload;
+  displayFields?: DisplayField[];
+}
+
 export interface ChatMessage {
   id: string;
   role: 'assistant' | 'user';
@@ -107,4 +121,9 @@ export interface ChatMessage {
   relatedEntries?: RelatedEntriesPayload;
   /** Field schema from meta (same as relatedEntries.fields when present). */
   displayFields?: DisplayField[];
+  /**
+   * Follow-up rounds kept inside this assistant bubble
+   * (clarify answers / recommended questions), not new chat bubbles.
+   */
+  turns?: AnswerTurn[];
 }
