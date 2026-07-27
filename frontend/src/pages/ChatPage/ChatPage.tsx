@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { ComponentRef } from 'react';
+import type { ComponentRef, ReactNode } from 'react';
 import { RedoOutlined, RobotOutlined } from '@ant-design/icons';
 import {
   Actions,
@@ -76,12 +76,30 @@ function sessionIdStorageKey(sessionKey: string) {
   return `nkh:session-id:${sessionKey}`;
 }
 
-function ensureSessionId(sessionKey: string): string {
+/**
+ * Resolve session id for Backend A / B.
+ * Mock 联调：URL 加 `?sid=1`（正常）或 `?sid=2`（澄清）；
+ * 未指定时沿用 sessionStorage，否则生成新 id。
+ */
+function resolveSessionId(sessionKey: string, search: string): string {
   const key = sessionIdStorageKey(sessionKey);
+  const params = new URLSearchParams(search);
+  const fromQuery =
+    params.get('sid')?.trim() ||
+    params.get('sessionId')?.trim() ||
+    params.get('session_id')?.trim() ||
+    '';
+
+  if (fromQuery === '1' || fromQuery === '2') {
+    sessionStorage.setItem(key, fromQuery);
+    return fromQuery;
+  }
+
   const existing = sessionStorage.getItem(key)?.trim();
   if (existing) {
     return existing;
   }
+
   const next =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
@@ -263,6 +281,25 @@ function updateThoughtNode(
     };
   }
 
+  // retrieval 节点：拿到优化后的查询关键词
+  if (event.node === 'retrieval' && phase === 'end') {
+    return {
+      ...current,
+      intent: {
+        ...current.intent,
+        intent: event.intent ?? current.intent.intent,
+        categories: event.categories ?? current.intent.categories,
+        status: completePrecedingStep(current.intent.status),
+      },
+      clarity: {
+        ...current.clarity,
+        status: completePrecedingStep(current.clarity.status),
+        needClarify: event.needClarify ?? current.clarity.needClarify,
+        optimizedQuery: event.optimizedQuery?.trim() || current.clarity.optimizedQuery,
+      },
+    };
+  }
+
   return current;
 }
 
@@ -348,14 +385,26 @@ function toThoughtItemStatus(
   return status === 'pending' ? undefined : status;
 }
 
-function intentDescription(state: ChatThoughtState): string {
+function intentDescription(state: ChatThoughtState): ReactNode {
   switch (state.intent.status) {
     case 'loading':
       return '正在识别用户要查找的对象';
-    case 'success':
-      return state.intent.intent && INTENT_LABELS[state.intent.intent]
-				? `通过对您提出的问题进行分析分类，您提出的问属于"${INTENT_LABELS[state.intent.intent]}"类问题`
-				: "已完成用户意图判断";
+    case 'success': {
+      const label =
+        state.intent.intent && INTENT_LABELS[state.intent.intent]
+          ? INTENT_LABELS[state.intent.intent]
+          : '';
+      if (label) {
+        return (
+          <>
+            通过对您提出的问题进行分析分类，您提出的问属于"
+            <span className={styles.thoughtHighlight}>{label}</span>
+            "类问题
+          </>
+        );
+      }
+      return '已完成用户意图判断';
+    }
     case 'error':
       return '意图判断失败';
     case 'abort':
@@ -365,7 +414,7 @@ function intentDescription(state: ChatThoughtState): string {
   }
 }
 
-function clarityDescription(state: ChatThoughtState): string {
+function clarityDescription(state: ChatThoughtState): ReactNode {
   switch (state.clarity.status) {
     case 'loading':
       return '正在检查是否需要补充信息';
@@ -373,6 +422,19 @@ function clarityDescription(state: ChatThoughtState): string {
       const needsClarification = shouldAskFollowup(state);
       if (needsClarification === true) {
         return '需要补充相关信息';
+      }
+      const keywordList =
+        state.clarity.optimizedQuery?.split(/\s+/).filter(Boolean) ?? [];
+      if (keywordList.length > 0) {
+        return (
+          <>
+            用户问题明确，与
+            <span className={styles.thoughtHighlight}>
+              {keywordList.join('、')}
+            </span>
+            关键词有关
+          </>
+        );
       }
       if (needsClarification === false) {
         return '问题明确，可直接进行下一步';
@@ -416,9 +478,31 @@ function thoughtAnnouncement(state: ChatThoughtState): string {
     return `深度思考：${reasoningDescription(state)}`;
   }
   if (state.clarity.status !== 'pending') {
-    return `分析用户问题：${clarityDescription(state)}`;
+    const keywords =
+      state.clarity.optimizedQuery?.split(/\s+/).filter(Boolean).join('、') ??
+      '';
+    if (shouldAskFollowup(state) === true) {
+      return '分析用户问题：需要补充相关信息';
+    }
+    if (keywords) {
+      return `分析用户问题：用户问题明确，与${keywords}关键词有关`;
+    }
+    if (shouldAskFollowup(state) === false) {
+      return '分析用户问题：问题明确，可直接进行下一步';
+    }
+    return '分析用户问题：已完成问题明确性判断';
   }
-  return `判断用户意图：${intentDescription(state)}`;
+  const label =
+    state.intent.intent && INTENT_LABELS[state.intent.intent]
+      ? INTENT_LABELS[state.intent.intent]
+      : '';
+  if (state.intent.status === 'success' && label) {
+    return `判断用户意图：通过对您提出的问题进行分析分类，您提出的问属于"${label}"类问题`;
+  }
+  if (state.intent.status === 'loading') {
+    return '判断用户意图：正在识别用户要查找的对象';
+  }
+  return '判断用户意图：等待开始';
 }
 
 function ThoughtProgress({
@@ -787,7 +871,7 @@ function ClarifyPanel({
             onSubmit={() => send(draft)}
             placeholder="补充说明或直接输入更具体的问题…"
             autoSize={{ minRows: 1, maxRows: 4 }}
-            className={styles.clarifySender}
+            rootClassName={styles.clarifySender}
           />
         </div>
       ) : null}
@@ -795,25 +879,34 @@ function ClarifyPanel({
       {suggestedQuestions.length > 0 ? (
         <Prompts
           title={
-            <span className={styles.clarifyPromptsTitle}>推荐问题</span>
+            <span className={styles.entriesTitle}>
+              推荐问题
+              <span className={styles.entriesCount}>
+                {suggestedQuestions.length}
+              </span>
+            </span>
           }
           items={suggestedQuestions.map((item, index) => ({
             key: `sq-${index}`,
             label: item,
-            description: item,
+            disabled: !interactive,
           }))}
           wrap
           vertical={false}
           className={styles.clarifyPrompts}
+          classNames={{
+            list: styles.promptChipList,
+            item: styles.promptChipItem,
+          }}
           onItemClick={({ data }) => {
             if (!interactive) {
               return;
             }
             const text =
-              typeof data.description === 'string'
-                ? data.description
-                : typeof data.label === 'string'
-                  ? data.label
+              typeof data.label === 'string'
+                ? data.label
+                : typeof data.description === 'string'
+                  ? data.description
                   : '';
             if (text.trim()) {
               send(text);
@@ -825,15 +918,67 @@ function ClarifyPanel({
   );
 }
 
+/** Follow-up chips under a completed normal answer (not the clarify panel). */
+function FollowupPrompts({
+  questions,
+  interactive,
+  onSubmit,
+}: {
+  questions: string[];
+  interactive: boolean;
+  onSubmit?: (text: string) => void;
+}) {
+  if (!questions.length) {
+    return null;
+  }
+
+  return (
+    <div className={styles.followupPrompts} role="region" aria-label="推荐问题">
+      <Prompts
+        title={
+          <span className={styles.entriesTitle}>
+            推荐问题
+            <span className={styles.entriesCount}>{questions.length}</span>
+          </span>
+        }
+        items={questions.map((item, index) => ({
+          key: `fq-${index}`,
+          label: item,
+          disabled: !interactive,
+        }))}
+        wrap
+        vertical={false}
+        className={styles.followupPromptsList}
+        classNames={{
+          list: styles.promptChipList,
+          item: styles.promptChipItem,
+        }}
+        onItemClick={({ data }) => {
+          if (!interactive || !onSubmit) {
+            return;
+          }
+          const text = typeof data.label === 'string' ? data.label : '';
+          if (text.trim()) {
+            onSubmit(text.trim());
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 function AnswerBody({
   message,
   reduceMotion,
   clarifyInteractive,
+  promptsInteractive,
   onClarifySubmit,
 }: {
   message: ChatMessage;
   reduceMotion: boolean | null;
   clarifyInteractive?: boolean;
+  /** Latest successful answer can click follow-up chips. */
+  promptsInteractive?: boolean;
   onClarifySubmit?: (text: string) => void;
 }) {
   const status = message.status;
@@ -858,6 +1003,14 @@ function AnswerBody({
     !message.relatedEntries &&
     !message.thinkContent;
 
+  // 正常回答结束后展示推荐问题（与澄清面板互斥）
+  const showFollowupPrompts =
+    !showClarifyPanel &&
+    !needsClarify &&
+    status === 'success' &&
+    suggestedQuestions.length > 0 &&
+    (Boolean(message.relatedEntries) || Boolean(message.thinkContent));
+
   return (
     <div className={styles.answerContent}>
       {showThoughtProgress ? (
@@ -875,6 +1028,14 @@ function AnswerBody({
 
       {message.relatedEntries ? (
         <RelatedEntriesList payload={message.relatedEntries} />
+      ) : null}
+
+      {showFollowupPrompts ? (
+        <FollowupPrompts
+          questions={suggestedQuestions}
+          interactive={Boolean(promptsInteractive && onClarifySubmit)}
+          onSubmit={onClarifySubmit}
+        />
       ) : null}
 
       {message.content &&
@@ -896,9 +1057,13 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const scene = agentKey ? getAgent(agentKey) : null;
   const sessionKey = agentKey ?? 'general';
   const displayName = scene ? `${CHAT_UI.name} · ${scene.label}` : CHAT_UI.name;
-  const sessionIdRef = useRef(ensureSessionId(sessionKey));
-
   const location = useLocation();
+  const sessionIdRef = useRef(resolveSessionId(sessionKey, location.search));
+
+  // Mock 联调：URL `?sid=1|2` 变化时同步 sessionId（不影响其它逻辑）
+  useEffect(() => {
+    sessionIdRef.current = resolveSessionId(sessionKey, location.search);
+  }, [location.search, sessionKey]);
   const reduceMotion = useReducedMotion();
   const [value, setValue] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
@@ -1027,7 +1192,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               activeAnswerRef.current !== answerId ||
               (event.node !== 'intent_classify' &&
                 event.node !== 'followup_check' &&
-                event.node !== 'clarify')
+                event.node !== 'clarify' &&
+                event.node !== 'retrieval')
             ) {
               return;
             }
@@ -1052,7 +1218,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               activeAnswerRef.current !== answerId ||
               (event.node !== 'intent_classify' &&
                 event.node !== 'followup_check' &&
-                event.node !== 'clarify')
+                event.node !== 'clarify' &&
+                event.node !== 'retrieval')
             ) {
               return;
             }
@@ -1355,18 +1522,22 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           const message = info.extraInfo?.message as ChatMessage | undefined;
 
           if (kind === 'answer' && message) {
-            const clarifyInteractive =
+            const isLatestSuccess =
               !isRequesting &&
               message.id === latestAnswerId &&
-              status === 'success' &&
+              status === 'success';
+            const clarifyInteractive =
+              isLatestSuccess &&
               shouldAskFollowup(message.thoughtState ?? createThoughtState()) ===
                 true;
+            const promptsInteractive = isLatestSuccess;
 
             return (
               <AnswerBody
                 message={{ ...message, status }}
                 reduceMotion={reduceMotion}
                 clarifyInteractive={clarifyInteractive}
+                promptsInteractive={promptsInteractive}
                 onClarifySubmit={submit}
               />
             );

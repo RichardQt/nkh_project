@@ -126,6 +126,9 @@ function parseWorkflowNodeEvent(data: string): WorkflowNodeEvent | null {
     if (typeof record.kg_count === 'number') {
       event.kgCount = record.kg_count;
     }
+    if (typeof record.optimized_query === 'string') {
+      event.optimizedQuery = record.optimized_query;
+    }
 
     return event;
   } catch {

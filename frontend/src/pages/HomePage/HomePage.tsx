@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
 import { ArrowUpOutlined } from '@ant-design/icons';
 import { Sender, Welcome } from '@ant-design/x';
@@ -21,10 +21,21 @@ const BRAND = {
   placeholder: '描述你的问题或目标，Enter 发送，Shift + Enter 换行',
 } as const;
 
+/** 首页输入框聚焦时的推荐问题（临时占位，后续可接接口）。 */
+const SUGGESTED_QUESTIONS = [
+  '怎样提高高分子材料的耐老化性能？',
+  '如何提升光伏发电系统的能量转化效率？',
+  '如何有效增强高温合金的抗蠕变性能？',
+  '怎样有效提升锂离子电池的能量密度而不牺牲其循环寿命？',
+] as const;
+
 export default function HomePage() {
   const [selectedKey, setSelectedKey] = useState<AgentKey | null>(null);
   const [value, setValue] = useState('');
+  const [composerFocused, setComposerFocused] = useState(false);
   const senderRef = useRef<ComponentRef<typeof Sender>>(null);
+  const composerRegionRef = useRef<HTMLDivElement>(null);
+  const blurTimerRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
 
@@ -35,6 +46,15 @@ export default function HomePage() {
   const bottomItems = homeNavBottomKeys
     .map((key) => agentsByKey.get(key))
     .filter((item): item is AgentDefinition => Boolean(item));
+
+  useEffect(
+    () => () => {
+      if (blurTimerRef.current != null) {
+        window.clearTimeout(blurTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const selectItem = (key: AgentKey) => {
     setSelectedKey((current) => (current === key ? null : key));
@@ -47,10 +67,40 @@ export default function HomePage() {
       return;
     }
 
+    setComposerFocused(false);
+
     // 有选中入口则带上 scene key，供后端 A 识别场景；对话本身统一走接口
     const path = selectedKey ? `/chat/${selectedKey}` : '/chat';
     navigate(`${path}?q=${encodeURIComponent(question)}`, {
       state: { initialQuestion: question },
+    });
+  };
+
+  const handleComposerFocus = () => {
+    if (blurTimerRef.current != null) {
+      window.clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+    setComposerFocused(true);
+  };
+
+  const handleComposerBlur = () => {
+    // 延迟关闭，便于点击推荐项（mousedown 已 preventDefault 时通常不需要，但保留兜底）
+    blurTimerRef.current = window.setTimeout(() => {
+      const root = composerRegionRef.current;
+      if (root?.contains(document.activeElement)) {
+        return;
+      }
+      setComposerFocused(false);
+      blurTimerRef.current = null;
+    }, 120);
+  };
+
+  const pickSuggestion = (question: string) => {
+    setValue(question);
+    // 填入后内容非空，推荐弹层自动收起；不自动发送
+    window.requestAnimationFrame(() => {
+      senderRef.current?.focus?.();
     });
   };
 
@@ -83,6 +133,9 @@ export default function HomePage() {
       </motion.div>
     );
   };
+
+  // 仅在聚焦且输入为空时展示，支持清空后再次弹出
+  const showSuggestions = composerFocused && !value.trim();
 
   return (
     <main className={styles.page}>
@@ -140,6 +193,7 @@ export default function HomePage() {
           </div>
 
           <motion.div
+            ref={composerRegionRef}
             className={styles.composerRegion}
             initial={reduceMotion ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -157,6 +211,8 @@ export default function HomePage() {
               placeholder={BRAND.placeholder}
               onChange={setValue}
               onSubmit={submit}
+              onFocus={handleComposerFocus}
+              onBlur={handleComposerBlur}
               rootClassName={styles.sender}
               classNames={{
                 input: styles.senderInput,
@@ -189,6 +245,34 @@ export default function HomePage() {
                 );
               }}
             />
+
+            {showSuggestions ? (
+              <div
+                className={styles.suggestionPopup}
+                role="listbox"
+                aria-label="推荐问题"
+              >
+                <span className={styles.suggestionCaret} aria-hidden />
+                <ul className={styles.suggestionList}>
+                  {SUGGESTED_QUESTIONS.map((question) => (
+                    <li key={question}>
+                      <button
+                        type="button"
+                        className={styles.suggestionItem}
+                        role="option"
+                        onMouseDown={(event) => {
+                          // 阻止按钮抢焦点导致输入框 blur 后弹层先关
+                          event.preventDefault();
+                        }}
+                        onClick={() => pickSuggestion(question)}
+                      >
+                        {question}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </motion.div>
         </motion.div>
       </div>

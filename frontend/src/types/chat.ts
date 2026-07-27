@@ -64,6 +64,7 @@ export interface WorkflowNodeEvent {
   isNewTopic?: boolean;
   ragCount?: number;
   kgCount?: number;
+  optimizedQuery?: string;
 }
 
 export interface IntentThoughtStep {
@@ -79,6 +80,7 @@ export interface ClarityThoughtStep {
   isFollowup?: boolean;
   clarificationRequested?: boolean;
   suggestedQuestions?: string[];
+  optimizedQuery?: string;
 }
 
 export interface ChatThoughtState {

@@ -124,6 +124,11 @@
   text-wrap: pretty;
 }
 
+.thoughtHighlight {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 .thoughtItemContent {
   margin-top: -4px;
   padding: 10px 12px;
@@ -166,26 +171,156 @@
 
 .clarifySender {
   width: 100%;
+  background: var(--surface-muted) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+  transition:
+    border-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out) !important;
 }
 
-.clarifySender :global(.ant-sender) {
-  background: var(--surface-muted) !important;
-  border-color: var(--border) !important;
+.clarifySender:focus-within {
+  border-color: rgba(43, 92, 255, 0.35) !important;
+  box-shadow: 0 0 0 3px rgba(43, 92, 255, 0.1) !important;
+}
+
+.clarifySender :global(.ant-sender-content) {
+  gap: 6px !important;
+  padding-block: 6px !important;
+  padding-inline: 10px !important;
+  align-items: center !important;
+}
+
+.clarifySender :global(.ant-sender-input),
+.clarifySender :global(textarea.ant-sender-input),
+.clarifySender :global(textarea.ant-input) {
+  min-height: 22px !important;
+  font-size: 13px !important;
+  line-height: 22px !important;
+}
+
+.clarifySender :global(textarea:focus),
+.clarifySender :global(.ant-sender-input:focus),
+.clarifySender :global(.ant-input:focus),
+.clarifySender :global(.ant-input-focused) {
+  outline: none !important;
+  border-color: transparent !important;
   box-shadow: none !important;
 }
 
-.clarifyPromptsTitle {
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-weight: 600;
+.clarifySender :global(.ant-sender-actions-list) {
+  align-self: center !important;
 }
 
-.clarifyPrompts {
+.clarifySender :global(.ant-btn) {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+}
+
+/* —— 推荐问题（澄清区 / 回答后共用 chip 风格） —— */
+.clarifyPrompts,
+.followupPromptsList {
   min-width: 0;
 }
 
-.clarifyPrompts :global(.ant-prompts-item) {
-  max-width: 100%;
+.followupPrompts {
+  min-width: 0;
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+/* 标题与「相关结果」共用 .entriesTitle；压掉 Prompts 默认 Title 样式 */
+.clarifyPrompts :global(.ant-prompts-title),
+.followupPromptsList :global(.ant-prompts-title) {
+  margin: 0 0 10px !important;
+  padding: 0 !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  line-height: inherit !important;
+}
+
+.clarifyPrompts :global(.ant-prompts-title) .entriesTitle,
+.followupPromptsList :global(.ant-prompts-title) .entriesTitle {
+  margin-bottom: 0 !important;
+}
+
+.promptChipList {
+  gap: 6px !important;
+  align-items: flex-start !important;
+}
+
+.promptChipItem {
+  max-width: min(100%, 520px) !important;
+  min-width: 0 !important;
+  gap: 0 !important;
+  padding: 5px 10px !important;
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.45 !important;
+  background: var(--surface-muted) !important;
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+  transition:
+    color 0.16s var(--ease-out),
+    border-color 0.16s var(--ease-out),
+    background-color 0.16s var(--ease-out),
+    box-shadow 0.16s var(--ease-out) !important;
+}
+
+.promptChipItem :global(.ant-prompts-content) {
+  min-width: 0;
+  gap: 0 !important;
+}
+
+.promptChipItem :global(.ant-prompts-label) {
+  margin: 0 !important;
+  padding: 0 !important;
+  color: inherit !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.45 !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.promptChipItem:hover {
+  color: var(--primary) !important;
+  background: color-mix(in srgb, var(--primary-soft) 72%, var(--surface)) !important;
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border)) !important;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--primary) 8%, transparent) !important;
+}
+
+.promptChipItem:active {
+  background: color-mix(in srgb, var(--primary-soft) 88%, var(--surface-muted)) !important;
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border)) !important;
+}
+
+.promptChipItem:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.promptChipItem:global(.ant-prompts-item-disabled),
+.promptChipItem:global(.ant-prompts-item-disabled:hover) {
+  color: var(--text-tertiary) !important;
+  background: color-mix(in srgb, var(--surface-muted) 85%, transparent) !important;
+  border-color: color-mix(in srgb, var(--border) 80%, transparent) !important;
+  box-shadow: none !important;
+  cursor: default !important;
+  opacity: 0.78;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .promptChipItem {
+    transition: none !important;
+  }
 }
 
 .entriesPanel {
