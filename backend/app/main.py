@@ -32,8 +32,9 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 # Allow ``python app/main.py`` (script mode has no parent package).
 if __package__ in (None, ""):
@@ -48,6 +49,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.config import BACKEND_B_API_KEY, BACKEND_B_BASE_URL, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
+from app.conversation_store import (
+    delete_conversation,
+    get_conversation,
+    init_db,
+    list_conversations,
+    rename_conversation,
+    upsert_conversation,
+)
 from app.field_schema import (
     ACHIEVEMENT_FIELD_CATALOG,
     AGENT_FUNCTION_MAP,
@@ -57,11 +66,21 @@ from app.field_schema import (
 )
 from app.proxy_stream import stream_from_backend_b
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """App startup / shutdown hooks (replaces deprecated on_event)."""
+
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="AI Innovation Assistant API (Backend A)",
-    version="0.3.0",
+    version="0.4.0",
     docs_url="/docs",
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -73,7 +92,7 @@ app.add_middleware(
         "http://127.0.0.1:4173",
     ],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Accept"],
 )
 
@@ -96,6 +115,123 @@ async def health() -> dict[str, Any]:
         "modelConfigured": bool(LLM_API_KEY and LLM_BASE_URL),
         "model": LLM_MODEL,
     }
+
+
+# ---------------------------------------------------------------------------
+# Conversation history (SQLite)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/conversations")
+def api_list_conversations() -> dict[str, Any]:
+    """List conversation summaries for sidebar history."""
+
+    items = list_conversations()
+    return {"items": items}
+
+
+@app.get("/api/conversations/{conversation_id}")
+def api_get_conversation(conversation_id: str) -> dict[str, Any]:
+    """Load one conversation including full message payloads."""
+
+    item = get_conversation(conversation_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return item
+
+
+@app.put("/api/conversations/{conversation_id}")
+async def api_put_conversation(
+    conversation_id: str, request: Request
+) -> dict[str, Any]:
+    """Create or update a conversation snapshot.
+
+    Body::
+
+        {
+          "title": "optional; defaults to first user question",
+          "agentKey": "achievement_discover" | null,
+          "sessionId": "...",
+          "messages": [ /* ChatMessage[] */ ]
+        }
+
+    Title is always derived from the first user question when possible.
+    """
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    body = {**body, "id": conversation_id}
+    try:
+        return upsert_conversation(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/conversations")
+async def api_create_conversation(request: Request) -> dict[str, Any]:
+    """Create a conversation (id optional; generated when omitted)."""
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    try:
+        return upsert_conversation(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.patch("/api/conversations/{conversation_id}")
+async def api_patch_conversation(
+    conversation_id: str, request: Request
+) -> dict[str, Any]:
+    """Rename a conversation.
+
+    Body::
+
+        {"title": "新标题"}
+    """
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    raw_title = body.get("title")
+    if not isinstance(raw_title, str):
+        raise HTTPException(status_code=422, detail="title 必须是字符串")
+
+    try:
+        item = rename_conversation(conversation_id, raw_title)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if item is None:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return item
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def api_delete_conversation(conversation_id: str) -> dict[str, Any]:
+    """Delete a conversation by id."""
+
+    deleted = delete_conversation(conversation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    return {"ok": True, "id": conversation_id}
 
 
 @app.get("/api/functions")

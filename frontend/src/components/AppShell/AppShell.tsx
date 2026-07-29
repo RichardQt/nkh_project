@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AppstoreOutlined,
   MenuOutlined,
@@ -7,19 +7,37 @@ import {
 } from '@ant-design/icons';
 import { Button, Divider, Drawer, Layout, Typography } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import ConversationHistory from '../ConversationHistory/ConversationHistory';
+import { conversationPath } from '../../services/conversationApi';
+import type { ConversationSummary } from '../../types/conversation';
 import styles from './AppShell.module.css';
 
 const { Content, Sider } = Layout;
 
 interface SidebarPanelProps {
   activePath: string;
+  /** Only on chat detail routes: show history list. */
+  showHistory: boolean;
+  activeConversationId: string | null;
   onNavigate: (path: string) => void;
+  onSelectConversation: (item: ConversationSummary) => void;
+  onDeletedConversation: (id: string) => void;
 }
 
-function SidebarPanel({ activePath, onNavigate }: SidebarPanelProps) {
-  const newChatActive = activePath === '/' || activePath === '/chat';
-  const agentsActive =
-    activePath === '/agents' || activePath.startsWith('/chat/');
+function SidebarPanel({
+  activePath,
+  showHistory,
+  activeConversationId,
+  onNavigate,
+  onSelectConversation,
+  onDeletedConversation,
+}: SidebarPanelProps) {
+  const newChatActive =
+    (activePath === '/' ||
+      activePath === '/chat' ||
+      activePath.startsWith('/chat/')) &&
+    !activeConversationId;
+  const agentsActive = activePath === '/agents';
 
   return (
     <div className={styles.sidebarPanel}>
@@ -64,8 +82,18 @@ function SidebarPanel({ activePath, onNavigate }: SidebarPanelProps) {
         </Button>
       </nav>
 
-      <Divider className={styles.sidebarDivider} />
-      <div className={styles.sidebarBlank} aria-hidden="true" />
+      {showHistory ? (
+        <>
+          <Divider className={styles.sidebarDivider} />
+          <ConversationHistory
+            activeConversationId={activeConversationId}
+            onSelect={onSelectConversation}
+            onDeleted={onDeletedConversation}
+          />
+        </>
+      ) : (
+        <div className={styles.sidebarBlank} aria-hidden="true" />
+      )}
     </div>
   );
 }
@@ -75,9 +103,29 @@ export default function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const activeConversationId = useMemo(() => {
+    const cid = new URLSearchParams(location.search).get('cid')?.trim();
+    return cid || null;
+  }, [location.search]);
+
+  // History only on chat detail pages (/chat, /chat/:agentKey), not home or agents.
+  const showHistory = location.pathname.startsWith('/chat');
+
   const handleNavigate = (path: string) => {
     setDrawerOpen(false);
     navigate(path);
+  };
+
+  const handleSelectConversation = (item: ConversationSummary) => {
+    setDrawerOpen(false);
+    navigate(conversationPath(item));
+  };
+
+  const handleDeletedConversation = (id: string) => {
+    if (activeConversationId === id) {
+      setDrawerOpen(false);
+      navigate('/');
+    }
   };
 
   // 首页、智能体中心与对话页均不展示顶部导航条
@@ -91,7 +139,11 @@ export default function AppShell() {
       <Sider width={260} className={styles.desktopSider} theme="light">
         <SidebarPanel
           activePath={location.pathname}
+          showHistory={showHistory}
+          activeConversationId={activeConversationId}
           onNavigate={handleNavigate}
+          onSelectConversation={handleSelectConversation}
+          onDeletedConversation={handleDeletedConversation}
         />
       </Sider>
 
@@ -106,7 +158,11 @@ export default function AppShell() {
       >
         <SidebarPanel
           activePath={location.pathname}
+          showHistory={showHistory}
+          activeConversationId={activeConversationId}
           onNavigate={handleNavigate}
+          onSelectConversation={handleSelectConversation}
+          onDeletedConversation={handleDeletedConversation}
         />
       </Drawer>
 

@@ -26,9 +26,9 @@ import type {
   BubbleListProps,
   ThoughtChainProps,
 } from '@ant-design/x';
-import { Drawer, Empty, List, Typography } from 'antd';
+import { Drawer, Empty, List, Spin, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { KnowledgeGraphModal } from '../../components/KnowledgeGraph/KnowledgeGraphModal';
 import {
   SceneResultPanel,
@@ -45,6 +45,12 @@ import {
   startChatStream,
   type ChatStreamController,
 } from '../../services/chatStream';
+import {
+  createConversationId,
+  getConversation,
+  saveConversation,
+  titleFromMessages,
+} from '../../services/conversationApi';
 import { startSceneMockStream } from '../../services/sceneMockStream';
 import type { AgentKey } from '../../types/agent';
 import type {
@@ -99,10 +105,33 @@ function sessionIdStorageKey(sessionKey: string) {
   return `nkh:session-id:${sessionKey}`;
 }
 
+function conversationIdStorageKey(sessionKey: string) {
+  return `nkh:conversation-id:${sessionKey}`;
+}
+
+function createIntroMessage(
+  sessionKey: string,
+  agentKey: AgentKey | null,
+): ChatMessage {
+  const scene = agentKey ? getAgent(agentKey) : null;
+  return {
+    id: `intro-${sessionKey}`,
+    role: 'assistant',
+    content: isSceneMockAgentKey(agentKey)
+      ? sceneIntroCopy(agentKey)
+      : scene
+        ? `当前场景：${scene.label}。${CHAT_UI.greeting}`
+        : CHAT_UI.greeting,
+    status: 'success',
+    kind: 'intro',
+  };
+}
+
 /**
  * Resolve session id for Backend A / B.
  * Mock 联调：URL 加 `?sid=1`（正常）或 `?sid=2`（澄清）；
  * 未指定时沿用 sessionStorage，否则生成新 id。
+ * 历史对话恢复时会写入指定 sessionId。
  */
 function resolveSessionId(sessionKey: string, search: string): string {
   const key = sessionIdStorageKey(sessionKey);
@@ -129,6 +158,55 @@ function resolveSessionId(sessionKey: string, search: string): string {
       : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   sessionStorage.setItem(key, next);
   return next;
+}
+
+function readConversationIdFromSearch(search: string): string {
+  return new URLSearchParams(search).get('cid')?.trim() ?? '';
+}
+
+function hasPersistableUserContent(messages: ChatMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      (message.role === 'user' || message.kind === 'question') &&
+      Boolean(message.content?.trim()),
+  );
+}
+
+/** Strip non-serializable noise; keep full bubble payload for restore. */
+function serializeMessagesForStorage(messages: ChatMessage[]): ChatMessage[] {
+  return messages.filter((message) => message.kind !== 'intro');
+}
+
+function messageRichnessScore(messages: ChatMessage[]): number {
+  let score = 0;
+  for (const message of messages) {
+    score += 1;
+    if (message.content?.trim()) score += 2;
+    if (message.thinkContent?.trim()) score += 4;
+    if (message.relatedEntries) score += 8;
+    if (message.sceneResult) score += 8;
+    if (message.searchPreview) score += 4;
+    if (message.thoughtState) score += 2;
+    if (message.status === 'success') score += 3;
+    if (message.status === 'loading' || message.status === 'updating') score += 1;
+    for (const turn of message.turns ?? []) {
+      score += 2;
+      if (turn.content?.trim()) score += 2;
+      if (turn.thinkContent?.trim()) score += 4;
+      if (turn.relatedEntries) score += 8;
+      if (turn.sceneResult) score += 8;
+      if (turn.status === 'success') score += 3;
+    }
+  }
+  return score;
+}
+
+/** Prefer the snapshot that carries more completed bubble content. */
+function pickRicherMessages(
+  a: ChatMessage[],
+  b: ChatMessage[],
+): ChatMessage[] {
+  return messageRichnessScore(a) >= messageRichnessScore(b) ? a : b;
 }
 
 function formatCellValue(value: RelatedEntryRow[string]): string {
@@ -1458,7 +1536,21 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const sessionKey = agentKey ?? 'general';
   const displayName = scene ? `${CHAT_UI.name} · ${scene.label}` : CHAT_UI.name;
   const location = useLocation();
+  const navigate = useNavigate();
+  const routeConversationId = readConversationIdFromSearch(location.search);
   const sessionIdRef = useRef(resolveSessionId(sessionKey, location.search));
+  // Bound conversation id (set on first send or after history restore).
+  const conversationIdRef = useRef<string | null>(null);
+  /** Last conversation id whose messages are already in React state. */
+  const loadedConversationIdRef = useRef<string | null>(null);
+  const persistTimerRef = useRef<number | null>(null);
+  const persistConversationRef = useRef<
+    (snapshot?: ChatMessage[]) => Promise<void>
+  >(async () => undefined);
+  const [historyLoading, setHistoryLoading] = useState(
+    Boolean(routeConversationId),
+  );
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Mock 联调：URL `?sid=1|2` 变化时同步 sessionId（不影响其它逻辑）
   useEffect(() => {
@@ -1473,17 +1565,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   >({});
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    {
-      id: `intro-${sessionKey}`,
-      role: 'assistant',
-      content: isSceneMockAgentKey(agentKey)
-        ? sceneIntroCopy(agentKey)
-        : scene
-          ? `当前场景：${scene.label}。${CHAT_UI.greeting}`
-          : CHAT_UI.greeting,
-      status: 'success',
-      kind: 'intro',
-    },
+    createIntroMessage(sessionKey, agentKey),
   ]);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -1500,13 +1582,18 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const entryQuestionRef = useRef<string | null>(null);
 
   if (entryQuestionRef.current === null) {
-    const fromRoute = readEntryQuestion(location.search, location.state);
-    const fromStorage =
-      sessionStorage.getItem(pendingStorageKey(sessionKey))?.trim() ?? '';
-    const question = fromRoute || fromStorage;
-    entryQuestionRef.current = question;
-    if (question) {
-      sessionStorage.setItem(pendingStorageKey(sessionKey), question);
+    // History restore skips auto-submit of entry question.
+    if (routeConversationId) {
+      entryQuestionRef.current = '';
+    } else {
+      const fromRoute = readEntryQuestion(location.search, location.state);
+      const fromStorage =
+        sessionStorage.getItem(pendingStorageKey(sessionKey))?.trim() ?? '';
+      const question = fromRoute || fromStorage;
+      entryQuestionRef.current = question;
+      if (question) {
+        sessionStorage.setItem(pendingStorageKey(sessionKey), question);
+      }
     }
   }
 
@@ -1520,6 +1607,203 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     setIsRequesting(next);
   }, []);
 
+  const ensureConversationId = useCallback(() => {
+    if (conversationIdRef.current) {
+      return conversationIdRef.current;
+    }
+    const id = createConversationId();
+    conversationIdRef.current = id;
+    sessionStorage.setItem(conversationIdStorageKey(sessionKey), id);
+    return id;
+  }, [sessionKey]);
+
+  const syncConversationIdToUrl = useCallback(
+    (id: string) => {
+      const params = new URLSearchParams(location.search);
+      if (params.get('cid') === id) {
+        return;
+      }
+      params.set('cid', id);
+      // Drop one-shot entry params once conversation is established.
+      params.delete('q');
+      const nextSearch = params.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : '',
+          hash: location.hash,
+        },
+        { replace: true },
+      );
+    },
+    [location.hash, location.pathname, location.search, navigate],
+  );
+
+  const persistConversation = useCallback(
+    async (snapshot?: ChatMessage[]) => {
+      const current = snapshot ?? messagesRef.current;
+      if (!hasPersistableUserContent(current)) {
+        return;
+      }
+
+      const id = ensureConversationId();
+      const payloadMessages = serializeMessagesForStorage(current);
+      const title = titleFromMessages(payloadMessages);
+
+      try {
+        await saveConversation({
+          id,
+          title,
+          agentKey,
+          sessionId: sessionIdRef.current,
+          messages: payloadMessages,
+        });
+        // Mark in-memory snapshot as authoritative for this id so the
+        // history-restore effect does not refetch mid-stream.
+        loadedConversationIdRef.current = id;
+        conversationIdRef.current = id;
+        syncConversationIdToUrl(id);
+      } catch (err) {
+        // Surface once in console; do not break chat UX.
+        console.warn('[conversation] save failed', err);
+      }
+    },
+    [agentKey, ensureConversationId, syncConversationIdToUrl],
+  );
+
+  persistConversationRef.current = persistConversation;
+
+  const schedulePersist = useCallback((snapshot?: ChatMessage[]) => {
+    if (persistTimerRef.current != null) {
+      window.clearTimeout(persistTimerRef.current);
+    }
+    // Prefer live ref at flush time so a delayed timer never writes a
+    // stale mid-stream snapshot over a completed answer.
+    const frozen = snapshot;
+    persistTimerRef.current = window.setTimeout(() => {
+      persistTimerRef.current = null;
+      const latest = messagesRef.current;
+      // If caller passed a snapshot, use the richer of the two (more fields / later status).
+      const toSave =
+        frozen && serializeMessagesForStorage(frozen).length
+          ? pickRicherMessages(frozen, latest)
+          : latest;
+      void persistConversationRef.current(toSave);
+    }, 320);
+  }, []);
+
+  // Restore history conversation from SQLite via Backend A.
+  // Only skip network reload when THIS mount already holds that conversation's messages.
+  useEffect(() => {
+    if (!routeConversationId) {
+      // Navigated to a blank chat (no cid): reset if we were showing history.
+      if (loadedConversationIdRef.current) {
+        requestRef.current?.abort();
+        requestRef.current = null;
+        activeAnswerRef.current = null;
+        activeTurnRef.current = null;
+        setRequesting(false);
+        conversationIdRef.current = null;
+        loadedConversationIdRef.current = null;
+        sessionStorage.removeItem(conversationIdStorageKey(sessionKey));
+        sessionStorage.removeItem(pendingStorageKey(sessionKey));
+        // Fresh backend session for a brand-new conversation.
+        const freshSession =
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        sessionStorage.setItem(sessionIdStorageKey(sessionKey), freshSession);
+        sessionIdRef.current = freshSession;
+        setMessages([createIntroMessage(sessionKey, agentKey)]);
+        setFeedbackById({});
+        previousMessageCountRef.current = 1;
+        autoStartedRef.current = false;
+        entryQuestionRef.current = '';
+        setHistoryError(null);
+      }
+      setHistoryLoading(false);
+      return;
+    }
+
+    // Same conversation already hydrated into state (e.g. we just created it).
+    if (loadedConversationIdRef.current === routeConversationId) {
+      conversationIdRef.current = routeConversationId;
+      setHistoryLoading(false);
+      setHistoryError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    requestRef.current?.abort();
+    requestRef.current = null;
+    activeAnswerRef.current = null;
+    activeTurnRef.current = null;
+    setRequesting(false);
+
+    void (async () => {
+      try {
+        const detail = await getConversation(routeConversationId);
+        if (cancelled) {
+          return;
+        }
+
+        conversationIdRef.current = detail.id;
+        loadedConversationIdRef.current = detail.id;
+        sessionStorage.setItem(
+          conversationIdStorageKey(sessionKey),
+          detail.id,
+        );
+
+        if (detail.sessionId?.trim()) {
+          sessionIdRef.current = detail.sessionId.trim();
+          sessionStorage.setItem(
+            sessionIdStorageKey(sessionKey),
+            detail.sessionId.trim(),
+          );
+        }
+
+        const restored = Array.isArray(detail.messages)
+          ? detail.messages.filter(
+              (item): item is ChatMessage =>
+                Boolean(item) &&
+                typeof item === 'object' &&
+                typeof (item as ChatMessage).id === 'string' &&
+                (item as ChatMessage).kind !== 'intro',
+            )
+          : [];
+
+        if (restored.length > 0) {
+          setMessages(restored);
+          previousMessageCountRef.current = restored.length;
+        } else {
+          setMessages([createIntroMessage(sessionKey, agentKey)]);
+          previousMessageCountRef.current = 1;
+        }
+
+        setFeedbackById({});
+        autoStartedRef.current = true;
+        entryQuestionRef.current = '';
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setHistoryError(
+          err instanceof Error ? err.message : '历史对话加载失败',
+        );
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agentKey, routeConversationId, sessionKey, setRequesting]);
+
   const cancelRequest = useCallback(() => {
     const activeAnswerId = activeAnswerRef.current;
     const activeTurnId = activeTurnRef.current;
@@ -1530,16 +1814,23 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     setRequesting(false);
 
     if (activeAnswerId) {
-      setMessages((current) =>
-        updateActiveTarget(current, activeAnswerId, activeTurnId, (target) => ({
-          ...target,
-          status: 'abort',
-          content: target.content || '已停止生成。',
-          thoughtState: stopThoughtState(target.thoughtState, 'abort'),
-        })),
-      );
+      setMessages((current) => {
+        const next = updateActiveTarget(
+          current,
+          activeAnswerId,
+          activeTurnId,
+          (target) => ({
+            ...target,
+            status: 'abort',
+            content: target.content || '已停止生成。',
+            thoughtState: stopThoughtState(target.thoughtState, 'abort'),
+          }),
+        );
+        schedulePersist(next);
+        return next;
+      });
     }
-  }, [setRequesting]);
+  }, [schedulePersist, setRequesting]);
 
   const beginStream = useCallback(
     (answerId: string, turnId: string | null, question: string) => {
@@ -1691,9 +1982,16 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               requestRef.current = null;
               setRequesting(false);
               sessionStorage.removeItem(pendingStorageKey(sessionKey));
-              setMessages((current) =>
-                updateActiveTarget(current, answerId, turnId, finalizeStreamTarget),
-              );
+              setMessages((current) => {
+                const next = updateActiveTarget(
+                  current,
+                  answerId,
+                  turnId,
+                  finalizeStreamTarget,
+                );
+                schedulePersist(next);
+                return next;
+              });
             },
             onError: (error) => {
               if (!isActiveTarget()) {
@@ -1711,20 +2009,27 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 error.name === 'AbortError'
                   ? '已停止生成。'
                   : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
-              setMessages((current) =>
-                updateActiveTarget(current, answerId, turnId, (target) => ({
-                  ...target,
-                  status: error.name === 'AbortError' ? 'abort' : 'error',
-                  thoughtState: stopThoughtState(
-                    target.thoughtState,
-                    error.name === 'AbortError' ? 'abort' : 'error',
-                  ),
-                  content:
-                    error.name === 'AbortError'
-                      ? target.content || fallbackMessage
-                      : fallbackMessage,
-                })),
-              );
+              setMessages((current) => {
+                const next = updateActiveTarget(
+                  current,
+                  answerId,
+                  turnId,
+                  (target) => ({
+                    ...target,
+                    status: error.name === 'AbortError' ? 'abort' : 'error',
+                    thoughtState: stopThoughtState(
+                      target.thoughtState,
+                      error.name === 'AbortError' ? 'abort' : 'error',
+                    ),
+                    content:
+                      error.name === 'AbortError'
+                        ? target.content || fallbackMessage
+                        : fallbackMessage,
+                  }),
+                );
+                schedulePersist(next);
+                return next;
+              });
             },
           },
         );
@@ -1846,9 +2151,16 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             requestRef.current = null;
             setRequesting(false);
             sessionStorage.removeItem(pendingStorageKey(sessionKey));
-            setMessages((current) =>
-              updateActiveTarget(current, answerId, turnId, finalizeStreamTarget),
-            );
+            setMessages((current) => {
+              const next = updateActiveTarget(
+                current,
+                answerId,
+                turnId,
+                finalizeStreamTarget,
+              );
+              schedulePersist(next);
+              return next;
+            });
           },
           onError: (error) => {
             if (!isActiveTarget()) {
@@ -1866,25 +2178,32 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               error.name === 'AbortError'
                 ? '已停止生成。'
                 : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
-            setMessages((current) =>
-              updateActiveTarget(current, answerId, turnId, (target) => ({
-                ...target,
-                status: error.name === 'AbortError' ? 'abort' : 'error',
-                thoughtState: stopThoughtState(
-                  target.thoughtState,
-                  error.name === 'AbortError' ? 'abort' : 'error',
-                ),
-                content:
-                  error.name === 'AbortError'
-                    ? target.content || fallbackMessage
-                    : fallbackMessage,
-              })),
-            );
+            setMessages((current) => {
+              const next = updateActiveTarget(
+                current,
+                answerId,
+                turnId,
+                (target) => ({
+                  ...target,
+                  status: error.name === 'AbortError' ? 'abort' : 'error',
+                  thoughtState: stopThoughtState(
+                    target.thoughtState,
+                    error.name === 'AbortError' ? 'abort' : 'error',
+                  ),
+                  content:
+                    error.name === 'AbortError'
+                      ? target.content || fallbackMessage
+                      : fallbackMessage,
+                }),
+              );
+              schedulePersist(next);
+              return next;
+            });
           },
         },
       );
     },
-    [agentKey, sessionKey, setRequesting],
+    [agentKey, schedulePersist, sessionKey, setRequesting],
   );
 
   const submit = useCallback(
@@ -1896,33 +2215,49 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
 
       const userId = nextMessageId('user');
       const answerId = nextMessageId('assistant');
+      const conversationId = ensureConversationId();
+      // Own this conversation in memory so the restore effect won't GET-overwrite
+      // the in-progress stream after ?cid= is written to the URL.
+      loadedConversationIdRef.current = conversationId;
+      syncConversationIdToUrl(conversationId);
 
       setValue('');
-      setMessages((current) => [
-        ...current.filter((message) => message.kind !== 'intro'),
-        {
-          id: userId,
-          role: 'user',
-          content: question,
-          status: 'success',
-          kind: 'question',
-        },
-        {
-          id: answerId,
-          role: 'assistant',
-          content: '',
-          thinkContent: '',
-          thoughtState: createThoughtState(),
-          status: 'loading',
-          kind: 'answer',
-          sourceQuestion: question,
-          turns: [],
-        },
-      ]);
+      setMessages((current) => {
+        const next: ChatMessage[] = [
+          ...current.filter((message) => message.kind !== 'intro'),
+          {
+            id: userId,
+            role: 'user',
+            content: question,
+            status: 'success',
+            kind: 'question',
+          },
+          {
+            id: answerId,
+            role: 'assistant',
+            content: '',
+            thinkContent: '',
+            thoughtState: createThoughtState(),
+            status: 'loading',
+            kind: 'answer',
+            sourceQuestion: question,
+            turns: [],
+          },
+        ];
+        // Persist early so the first question appears in sidebar history.
+        schedulePersist(next);
+        return next;
+      });
       beginStream(answerId, null, question);
       return true;
     },
-    [beginStream, nextMessageId],
+    [
+      beginStream,
+      ensureConversationId,
+      nextMessageId,
+      schedulePersist,
+      syncConversationIdToUrl,
+    ],
   );
 
   /**
@@ -1944,8 +2279,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       }
 
       const turnId = nextMessageId('turn');
-      setMessages((current) =>
-        current.map((message) =>
+      setMessages((current) => {
+        const next = current.map((message) =>
           message.id === answerId
             ? {
                 ...message,
@@ -1955,16 +2290,18 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 ],
               }
             : message,
-        ),
-      );
+        );
+        schedulePersist(next);
+        return next;
+      });
       beginStream(answerId, turnId, question);
       return true;
     },
-    [beginStream, nextMessageId],
+    [beginStream, nextMessageId, schedulePersist],
   );
 
   useEffect(() => {
-    if (autoStartedRef.current) {
+    if (autoStartedRef.current || routeConversationId || historyLoading) {
       return;
     }
 
@@ -1981,20 +2318,41 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     const started = submit(question);
 
     if (started) {
-      if (window.location.search) {
+      // keep cid if submit already wrote it; only strip entry q
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('q')) {
+        params.delete('q');
+        const nextSearch = params.toString();
         window.history.replaceState(
           null,
           '',
-          `${location.pathname}${window.location.hash ?? ''}`,
+          `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash ?? ''}`,
         );
       }
     } else {
       autoStartedRef.current = false;
     }
-  }, [location.pathname, sessionKey, submit]);
+  }, [
+    historyLoading,
+    location.pathname,
+    routeConversationId,
+    sessionKey,
+    submit,
+  ]);
 
+  // True unmount only: empty deps so navigate/cid updates do not abort the stream
+  // or cancel a pending final save.
   useEffect(
     () => () => {
+      if (persistTimerRef.current != null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+      // Flush latest snapshot when leaving the page.
+      const snapshot = messagesRef.current;
+      if (hasPersistableUserContent(snapshot)) {
+        void persistConversationRef.current(snapshot);
+      }
       const active = requestRef.current;
       window.setTimeout(() => {
         active?.abort();
@@ -2406,6 +2764,40 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       }),
     [displayName, feedbackById, messages, submit],
   );
+
+  if (historyLoading) {
+    return (
+      <main className={styles.page}>
+        <section
+          className={styles.conversation}
+          aria-label={`${displayName}对话加载中`}
+        >
+          <div className={styles.historyState}>
+            <Spin size="small" />
+            <Typography.Text type="secondary">正在加载历史对话…</Typography.Text>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (historyError) {
+    return (
+      <main className={styles.page}>
+        <section
+          className={styles.conversation}
+          aria-label={`${displayName}对话加载失败`}
+        >
+          <div className={styles.historyState}>
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={historyError}
+            />
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className={styles.page}>
