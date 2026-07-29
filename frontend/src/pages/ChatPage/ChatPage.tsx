@@ -2303,6 +2303,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               fadeIn
               items={[
                 {
+                  key: 'retry',
+                  label: '重新生成',
+                  icon: <RedoOutlined aria-label="重新生成" />,
+                },
+                {
                   key: 'copy',
                   actionRender: (
                     <Actions.Copy text={copyText} aria-label="复制回答" />
@@ -2333,11 +2338,6 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                     ) : (
                       <DislikeOutlined aria-label="点踩" />
                     ),
-                },
-                {
-                  key: 'retry',
-                  label: '重新生成',
-                  icon: <RedoOutlined aria-label="重新生成" />,
                 },
               ]}
               onClick={({ key }) => {
