@@ -3,6 +3,7 @@ import type {
   KgQueryRequest,
   KgQueryResponse,
 } from '../types/kg';
+import { authHeaders, notifyAuthExpired } from './http';
 
 export class KgQueryError extends Error {
   status?: number;
@@ -190,10 +191,10 @@ export async function queryKnowledgeGraph(
   try {
     response = await fetch('/api/kg/query', {
       method: 'POST',
-      headers: {
+      headers: authHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
-      },
+      }),
       body: JSON.stringify(body),
       signal,
     });
@@ -215,6 +216,9 @@ export async function queryKnowledgeGraph(
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      notifyAuthExpired();
+    }
     const msg =
       typeof payload?.message === 'string' && payload.message
         ? payload.message

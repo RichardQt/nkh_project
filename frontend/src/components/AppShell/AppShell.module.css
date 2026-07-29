@@ -121,6 +121,68 @@
   flex: 1;
 }
 
+.userFooter {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 12px;
+  padding-top: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.userMeta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+
+.userAvatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  color: var(--primary);
+  font-size: 13px;
+  background: var(--primary-soft);
+  border-radius: 8px;
+}
+
+.userText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.userName {
+  color: var(--text) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+.userRole {
+  margin-top: 2px !important;
+  font-size: 11px !important;
+}
+
+.logoutButton {
+  flex: 0 0 auto;
+  height: 32px !important;
+  padding-inline: 8px !important;
+  color: var(--text-secondary) !important;
+  font-size: 12px !important;
+}
+
+.logoutButton:hover {
+  color: var(--text) !important;
+  background: var(--surface-muted) !important;
+}
+
 .mainLayout {
   min-width: 0;
   height: 100dvh;

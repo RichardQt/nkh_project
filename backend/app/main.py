@@ -44,16 +44,25 @@ if __package__ in (None, ""):
         sys.path.insert(0, _root)
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from app.auth_store import (
+    authenticate,
+    create_session,
+    delete_session,
+    get_user_by_token,
+    get_user_by_username,
+    init_auth,
+)
 from app.config import BACKEND_B_API_KEY, BACKEND_B_BASE_URL, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 from app.conversation_store import (
     delete_conversation,
     get_conversation,
     init_db,
     list_conversations,
+    migrate_orphan_conversations,
     rename_conversation,
     upsert_conversation,
 )
@@ -68,17 +77,44 @@ from app.hotspot_store import get_hotspots
 from app.proxy_stream import stream_from_backend_b
 
 
+def _extract_bearer_token(request: Request) -> str | None:
+    header = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not header or not isinstance(header, str):
+        return None
+    parts = header.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
+
+
+def get_current_user(request: Request) -> dict[str, Any]:
+    """Require a valid opaque session token."""
+
+    token = _extract_bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="未登录或会话已失效")
+    user = get_user_by_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="未登录或会话已失效")
+    return user
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """App startup / shutdown hooks (replaces deprecated on_event)."""
 
     init_db()
+    init_auth()
+    admin = get_user_by_username("admin")
+    if admin is not None:
+        migrate_orphan_conversations(admin["id"])
     yield
 
 
 app = FastAPI(
     title="AI Innovation Assistant API (Backend A)",
-    version="0.4.0",
+    version="0.5.0",
     docs_url="/docs",
     redoc_url=None,
     lifespan=lifespan,
@@ -94,7 +130,7 @@ app.add_middleware(
     ],
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
 _SSE_HEADERS = {
@@ -119,23 +155,75 @@ async def health() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Auth (opaque session tokens + bcrypt passwords)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/auth/login")
+async def api_login(request: Request) -> dict[str, Any]:
+    """Validate username/password and issue a session token."""
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    username = body.get("username")
+    password = body.get("password")
+    if not isinstance(username, str) or not isinstance(password, str):
+        raise HTTPException(status_code=422, detail="用户名和密码不能为空")
+
+    user = authenticate(username, password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    token = create_session(user["id"])
+    return {"token": token, "user": user}
+
+
+@app.get("/api/auth/me")
+def api_me(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    """Return the current authenticated user."""
+
+    return {"user": user}
+
+
+@app.post("/api/auth/logout")
+def api_logout(request: Request) -> dict[str, Any]:
+    """Invalidate the current session token (idempotent)."""
+
+    token = _extract_bearer_token(request)
+    if token:
+        delete_session(token)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Conversation history (SQLite)
 # ---------------------------------------------------------------------------
 
 
 @app.get("/api/conversations")
-def api_list_conversations() -> dict[str, Any]:
+def api_list_conversations(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """List conversation summaries for sidebar history."""
 
-    items = list_conversations()
+    items = list_conversations(user["id"])
     return {"items": items}
 
 
 @app.get("/api/conversations/{conversation_id}")
-def api_get_conversation(conversation_id: str) -> dict[str, Any]:
+def api_get_conversation(
+    conversation_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Load one conversation including full message payloads."""
 
-    item = get_conversation(conversation_id)
+    item = get_conversation(conversation_id, user["id"])
     if item is None:
         raise HTTPException(status_code=404, detail="对话不存在")
     return item
@@ -143,7 +231,9 @@ def api_get_conversation(conversation_id: str) -> dict[str, Any]:
 
 @app.put("/api/conversations/{conversation_id}")
 async def api_put_conversation(
-    conversation_id: str, request: Request
+    conversation_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Create or update a conversation snapshot.
 
@@ -169,13 +259,18 @@ async def api_put_conversation(
 
     body = {**body, "id": conversation_id}
     try:
-        return upsert_conversation(body)
+        return upsert_conversation(body, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/conversations")
-async def api_create_conversation(request: Request) -> dict[str, Any]:
+async def api_create_conversation(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Create a conversation (id optional; generated when omitted)."""
 
     try:
@@ -187,14 +282,18 @@ async def api_create_conversation(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
 
     try:
-        return upsert_conversation(body)
+        return upsert_conversation(body, user["id"])
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.patch("/api/conversations/{conversation_id}")
 async def api_patch_conversation(
-    conversation_id: str, request: Request
+    conversation_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Rename a conversation.
 
@@ -216,7 +315,7 @@ async def api_patch_conversation(
         raise HTTPException(status_code=422, detail="title 必须是字符串")
 
     try:
-        item = rename_conversation(conversation_id, raw_title)
+        item = rename_conversation(conversation_id, raw_title, user["id"])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -226,17 +325,23 @@ async def api_patch_conversation(
 
 
 @app.delete("/api/conversations/{conversation_id}")
-def api_delete_conversation(conversation_id: str) -> dict[str, Any]:
+def api_delete_conversation(
+    conversation_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Delete a conversation by id."""
 
-    deleted = delete_conversation(conversation_id)
+    deleted = delete_conversation(conversation_id, user["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="对话不存在")
     return {"ok": True, "id": conversation_id}
 
 
 @app.get("/api/hotspots")
-async def api_hotspots(request: Request) -> dict[str, Any]:
+async def api_hotspots(
+    request: Request,
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Hotspot recommendations: top 5 rows per sheet from ``英文字段.xlsx``.
 
     Fields follow list-card projection in ``信息匹配.md`` / ``field_schema``.
@@ -255,7 +360,9 @@ async def api_hotspots(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/functions")
-async def list_functions() -> dict[str, Any]:
+async def list_functions(
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Expose agent→function map and current field projection (for admin/debug)."""
 
     seen: set[str] = set()
@@ -283,7 +390,10 @@ async def list_functions() -> dict[str, Any]:
 
 
 @app.post("/api/kg/query")
-async def kg_query(request: Request) -> Response:
+async def kg_query(
+    request: Request,
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
     """Proxy knowledge-graph query to Backend B.
 
     Request body (frontend may send only entity_type + vid)::
@@ -356,7 +466,10 @@ async def kg_query(request: Request) -> Response:
 
 
 @app.post("/api/chat/stream")
-async def stream_chat(request: Request) -> StreamingResponse:
+async def stream_chat(
+    request: Request,
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> StreamingResponse:
     """Stream thinking tokens + projected related entries via SSE.
 
     Accepts either frontend body or the same body as Backend B::

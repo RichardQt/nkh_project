@@ -8,6 +8,7 @@ import type {
   ConversationSummary,
   HistoryGroupKey,
 } from '../types/conversation';
+import { authHeaders, parseJsonResponse } from './http';
 
 function normalizeAgentKey(value: unknown): AgentKey | null {
   if (typeof value === 'string' && isAgentKey(value)) {
@@ -41,28 +42,12 @@ export function createConversationId(): string {
   return newId();
 }
 
-async function parseJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let detail = `请求失败 (${response.status})`;
-    try {
-      const body = (await response.json()) as { detail?: unknown };
-      if (typeof body.detail === 'string' && body.detail.trim()) {
-        detail = body.detail;
-      }
-    } catch {
-      // ignore
-    }
-    throw new Error(detail);
-  }
-  return (await response.json()) as T;
-}
-
 export async function listConversations(): Promise<ConversationSummary[]> {
   const response = await fetch('/api/conversations', {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers: authHeaders({ Accept: 'application/json' }),
   });
-  const data = await parseJson<ConversationListResponse>(response);
+  const data = await parseJsonResponse<ConversationListResponse>(response);
   return Array.isArray(data.items)
     ? data.items.map((item) => normalizeSummary(item))
     : [];
@@ -73,9 +58,9 @@ export async function getConversation(
 ): Promise<ConversationDetail> {
   const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers: authHeaders({ Accept: 'application/json' }),
   });
-  const detail = await parseJson<ConversationDetail>(response);
+  const detail = await parseJsonResponse<ConversationDetail>(response);
   return {
     ...normalizeSummary(detail),
     messages: Array.isArray(detail.messages) ? detail.messages : [],
@@ -98,10 +83,10 @@ export async function saveConversation(
     `/api/conversations/${encodeURIComponent(input.id)}`,
     {
       method: 'PUT',
-      headers: {
+      headers: authHeaders({
         Accept: 'application/json',
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({
         title: input.title,
         agentKey: input.agentKey,
@@ -110,7 +95,7 @@ export async function saveConversation(
       }),
     },
   );
-  const detail = await parseJson<ConversationDetail>(response);
+  const detail = await parseJsonResponse<ConversationDetail>(response);
   notifyConversationsChanged();
   return detail;
 }
@@ -121,13 +106,13 @@ export async function renameConversation(
 ): Promise<ConversationSummary> {
   const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    headers: {
+    headers: authHeaders({
       Accept: 'application/json',
       'Content-Type': 'application/json',
-    },
+    }),
     body: JSON.stringify({ title }),
   });
-  const detail = await parseJson<ConversationSummary>(response);
+  const detail = await parseJsonResponse<ConversationSummary>(response);
   notifyConversationsChanged();
   return normalizeSummary(detail);
 }
@@ -135,9 +120,9 @@ export async function renameConversation(
 export async function deleteConversation(id: string): Promise<void> {
   const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: { Accept: 'application/json' },
+    headers: authHeaders({ Accept: 'application/json' }),
   });
-  await parseJson<{ ok: boolean }>(response);
+  await parseJsonResponse<{ ok: boolean }>(response);
   notifyConversationsChanged();
 }
 

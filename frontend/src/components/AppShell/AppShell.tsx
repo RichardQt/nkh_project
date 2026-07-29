@@ -3,12 +3,15 @@ import {
   AppstoreOutlined,
   ArrowLeftOutlined,
   DatabaseOutlined,
+  LogoutOutlined,
   MenuOutlined,
   RobotOutlined,
   ShareAltOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { Button, Divider, Drawer, Layout, Typography } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../auth/AuthContext';
 import ConversationHistory from '../ConversationHistory/ConversationHistory';
 import { conversationPath } from '../../services/conversationApi';
 import type { ConversationSummary } from '../../types/conversation';
@@ -21,18 +24,26 @@ interface SidebarPanelProps {
   /** Only on chat detail routes: show history list. */
   showHistory: boolean;
   activeConversationId: string | null;
+  showKnowledgeBase: boolean;
+  username: string;
+  roleLabel: string;
   onNavigate: (path: string) => void;
   onSelectConversation: (item: ConversationSummary) => void;
   onDeletedConversation: (id: string) => void;
+  onLogout: () => void;
 }
 
 function SidebarPanel({
   activePath,
   showHistory,
   activeConversationId,
+  showKnowledgeBase,
+  username,
+  roleLabel,
   onNavigate,
   onSelectConversation,
   onDeletedConversation,
+  onLogout,
 }: SidebarPanelProps) {
   const inConversationDetail = Boolean(activeConversationId);
   const assistantActive =
@@ -117,17 +128,19 @@ function SidebarPanel({
           知识图谱
         </Button>
 
-        <Button
-          type="default"
-          icon={<DatabaseOutlined />}
-          size="large"
-          block
-          className={`${styles.navEntryButton} ${kbActive ? styles.navEntryButtonActive : ''}`}
-          onClick={() => onNavigate('/knowledge-base')}
-          aria-current={kbActive ? 'page' : undefined}
-        >
-          知识库设置
-        </Button>
+        {showKnowledgeBase ? (
+          <Button
+            type="default"
+            icon={<DatabaseOutlined />}
+            size="large"
+            block
+            className={`${styles.navEntryButton} ${kbActive ? styles.navEntryButtonActive : ''}`}
+            onClick={() => onNavigate('/knowledge-base')}
+            aria-current={kbActive ? 'page' : undefined}
+          >
+            知识库设置
+          </Button>
+        ) : null}
       </nav>
 
       {showHistory ? (
@@ -142,6 +155,31 @@ function SidebarPanel({
       ) : (
         <div className={styles.sidebarBlank} aria-hidden="true" />
       )}
+
+      <div className={styles.userFooter}>
+        <div className={styles.userMeta}>
+          <span className={styles.userAvatar} aria-hidden="true">
+            <UserOutlined />
+          </span>
+          <span className={styles.userText}>
+            <Typography.Text className={styles.userName} ellipsis>
+              {username}
+            </Typography.Text>
+            <Typography.Text type="secondary" className={styles.userRole}>
+              {roleLabel}
+            </Typography.Text>
+          </span>
+        </div>
+        <Button
+          type="text"
+          icon={<LogoutOutlined />}
+          className={styles.logoutButton}
+          onClick={onLogout}
+          aria-label="退出登录"
+        >
+          退出
+        </Button>
+      </div>
     </div>
   );
 }
@@ -150,6 +188,7 @@ export default function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const activeConversationId = useMemo(() => {
     const cid = new URLSearchParams(location.search).get('cid')?.trim();
@@ -158,6 +197,9 @@ export default function AppShell() {
 
   // History only on chat detail pages (/chat, /chat/:agentKey), not home or agents.
   const showHistory = location.pathname.startsWith('/chat');
+  const showKnowledgeBase = user?.role === 'admin';
+  const username = user?.username ?? '';
+  const roleLabel = user?.role === 'admin' ? '管理员' : '普通用户';
 
   const handleNavigate = (path: string) => {
     setDrawerOpen(false);
@@ -187,23 +229,37 @@ export default function AppShell() {
     }
   };
 
+  const handleLogout = async () => {
+    setDrawerOpen(false);
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
   // 首页、智能体中心与对话页均不展示顶部导航条
   const hideTopbar =
     location.pathname === '/' ||
     location.pathname === '/agents' ||
     location.pathname.startsWith('/chat');
 
+  const sidebarProps = {
+    activePath: location.pathname,
+    showHistory,
+    activeConversationId,
+    showKnowledgeBase,
+    username,
+    roleLabel,
+    onNavigate: handleNavigate,
+    onSelectConversation: handleSelectConversation,
+    onDeletedConversation: handleDeletedConversation,
+    onLogout: () => {
+      void handleLogout();
+    },
+  };
+
   return (
     <Layout className={styles.appLayout}>
       <Sider width={260} className={styles.desktopSider} theme="light">
-        <SidebarPanel
-          activePath={location.pathname}
-          showHistory={showHistory}
-          activeConversationId={activeConversationId}
-          onNavigate={handleNavigate}
-          onSelectConversation={handleSelectConversation}
-          onDeletedConversation={handleDeletedConversation}
-        />
+        <SidebarPanel {...sidebarProps} />
       </Sider>
 
       <Drawer
@@ -215,14 +271,7 @@ export default function AppShell() {
         className={styles.mobileDrawer}
         styles={{ body: { padding: 0 } }}
       >
-        <SidebarPanel
-          activePath={location.pathname}
-          showHistory={showHistory}
-          activeConversationId={activeConversationId}
-          onNavigate={handleNavigate}
-          onSelectConversation={handleSelectConversation}
-          onDeletedConversation={handleDeletedConversation}
-        />
+        <SidebarPanel {...sidebarProps} />
       </Drawer>
 
       <Layout className={styles.mainLayout}>

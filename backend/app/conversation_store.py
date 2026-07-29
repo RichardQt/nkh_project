@@ -3,6 +3,7 @@
 Stores full bubble payloads (user questions + assistant answers including
 thought chain, related entries, turns, scene results, etc.) as JSON.
 Title is the first user question in the conversation.
+Rows are scoped by ``user_id`` after auth migration.
 """
 
 from __future__ import annotations
@@ -33,8 +34,13 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
 def init_db() -> None:
-    """Create tables if missing. Safe to call multiple times."""
+    """Create tables if missing and ensure user_id column. Safe to call multiple times."""
 
     global _INITIALIZED
     with _LOCK:
@@ -51,10 +57,17 @@ def init_db() -> None:
                     session_id TEXT NOT NULL DEFAULT '',
                     messages_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    user_id TEXT
                 )
                 """
             )
+            columns = _table_columns(conn, "conversations")
+            if "user_id" not in columns:
+                conn.execute(
+                    "ALTER TABLE conversations ADD COLUMN user_id TEXT"
+                )
+
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_conversations_updated
@@ -67,8 +80,36 @@ def init_db() -> None:
                 ON conversations (created_at DESC)
                 """
             )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_conversations_user_created
+                ON conversations (user_id, created_at DESC)
+                """
+            )
             conn.commit()
             _INITIALIZED = True
+        finally:
+            conn.close()
+
+
+def migrate_orphan_conversations(admin_user_id: str) -> None:
+    """Assign legacy rows without user_id to the admin account."""
+
+    if not admin_user_id:
+        return
+    init_db()
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                UPDATE conversations
+                SET user_id = ?
+                WHERE user_id IS NULL OR user_id = ''
+                """,
+                (admin_user_id,),
+            )
+            conn.commit()
         finally:
             conn.close()
 
@@ -99,7 +140,7 @@ def _row_to_detail(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def list_conversations(limit: int = 200) -> list[dict[str, Any]]:
+def list_conversations(user_id: str, limit: int = 200) -> list[dict[str, Any]]:
     init_db()
     limit = max(1, min(int(limit), 500))
     with _LOCK:
@@ -109,17 +150,20 @@ def list_conversations(limit: int = 200) -> list[dict[str, Any]]:
                 """
                 SELECT id, title, agent_key, session_id, created_at, updated_at
                 FROM conversations
+                WHERE user_id = ?
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (user_id, limit),
             ).fetchall()
             return [_row_to_summary(row) for row in rows]
         finally:
             conn.close()
 
 
-def get_conversation(conversation_id: str) -> dict[str, Any] | None:
+def get_conversation(
+    conversation_id: str, user_id: str
+) -> dict[str, Any] | None:
     init_db()
     with _LOCK:
         conn = _connect()
@@ -129,9 +173,9 @@ def get_conversation(conversation_id: str) -> dict[str, Any] | None:
                 SELECT id, title, agent_key, session_id, messages_json,
                        created_at, updated_at
                 FROM conversations
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
-                (conversation_id,),
+                (conversation_id, user_id),
             ).fetchone()
             if row is None:
                 return None
@@ -160,8 +204,10 @@ def _extract_title_from_messages(messages: list[Any], fallback: str) -> str:
     return "未命名对话"
 
 
-def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
-    """Create or fully replace a conversation snapshot.
+def upsert_conversation(
+    payload: dict[str, Any], user_id: str
+) -> dict[str, Any]:
+    """Create or fully replace a conversation snapshot for ``user_id``.
 
     Expected keys:
       id (optional on create), title (optional), agentKey, sessionId, messages
@@ -169,6 +215,9 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
     """
 
     init_db()
+    if not user_id:
+        raise ValueError("user_id 不能为空")
+
     messages = payload.get("messages")
     if not isinstance(messages, list):
         raise ValueError("messages 必须是数组")
@@ -213,7 +262,10 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
         conn = _connect()
         try:
             existing = conn.execute(
-                "SELECT id, title, created_at FROM conversations WHERE id = ?",
+                """
+                SELECT id, title, created_at, user_id
+                FROM conversations WHERE id = ?
+                """,
                 (conversation_id,),
             ).fetchone()
 
@@ -222,8 +274,8 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
                     """
                     INSERT INTO conversations (
                         id, title, agent_key, session_id, messages_json,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, user_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         conversation_id,
@@ -233,16 +285,18 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
                         messages_json,
                         now,
                         now,
+                        user_id,
                     ),
                 )
-                created_at = now
             else:
+                owner = existing["user_id"]
+                if owner and owner != user_id:
+                    raise PermissionError("无权修改该对话")
                 # Keep original title once set from first question;
                 # only replace if previous was empty/placeholder.
                 prev_title = (existing["title"] or "").strip()
                 if prev_title and prev_title != "未命名对话":
                     title = prev_title
-                created_at = existing["created_at"]
                 conn.execute(
                     """
                     UPDATE conversations
@@ -250,7 +304,8 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
                         agent_key = ?,
                         session_id = ?,
                         messages_json = ?,
-                        updated_at = ?
+                        updated_at = ?,
+                        user_id = ?
                     WHERE id = ?
                     """,
                     (
@@ -259,6 +314,7 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
                         session_id,
                         messages_json,
                         now,
+                        user_id,
                         conversation_id,
                     ),
                 )
@@ -269,9 +325,9 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
                 SELECT id, title, agent_key, session_id, messages_json,
                        created_at, updated_at
                 FROM conversations
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
-                (conversation_id,),
+                (conversation_id, user_id),
             ).fetchone()
             assert row is not None
             return _row_to_detail(row)
@@ -279,7 +335,9 @@ def upsert_conversation(payload: dict[str, Any]) -> dict[str, Any]:
             conn.close()
 
 
-def rename_conversation(conversation_id: str, title: str) -> dict[str, Any] | None:
+def rename_conversation(
+    conversation_id: str, title: str, user_id: str
+) -> dict[str, Any] | None:
     """Update conversation title only. Returns summary or None if missing."""
 
     init_db()
@@ -294,8 +352,11 @@ def rename_conversation(conversation_id: str, title: str) -> dict[str, Any] | No
         conn = _connect()
         try:
             existing = conn.execute(
-                "SELECT id FROM conversations WHERE id = ?",
-                (conversation_id,),
+                """
+                SELECT id FROM conversations
+                WHERE id = ? AND user_id = ?
+                """,
+                (conversation_id, user_id),
             ).fetchone()
             if existing is None:
                 return None
@@ -304,18 +365,18 @@ def rename_conversation(conversation_id: str, title: str) -> dict[str, Any] | No
                 """
                 UPDATE conversations
                 SET title = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
-                (cleaned, now, conversation_id),
+                (cleaned, now, conversation_id, user_id),
             )
             conn.commit()
             row = conn.execute(
                 """
                 SELECT id, title, agent_key, session_id, created_at, updated_at
                 FROM conversations
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
-                (conversation_id,),
+                (conversation_id, user_id),
             ).fetchone()
             assert row is not None
             return _row_to_summary(row)
@@ -323,14 +384,14 @@ def rename_conversation(conversation_id: str, title: str) -> dict[str, Any] | No
             conn.close()
 
 
-def delete_conversation(conversation_id: str) -> bool:
+def delete_conversation(conversation_id: str, user_id: str) -> bool:
     init_db()
     with _LOCK:
         conn = _connect()
         try:
             cur = conn.execute(
-                "DELETE FROM conversations WHERE id = ?",
-                (conversation_id,),
+                "DELETE FROM conversations WHERE id = ? AND user_id = ?",
+                (conversation_id, user_id),
             )
             conn.commit()
             return cur.rowcount > 0

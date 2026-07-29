@@ -6,6 +6,7 @@ import type {
   RelatedEntryRow,
   WorkflowNodeEvent,
 } from '../types/chat';
+import { authHeaders, notifyAuthExpired } from './http';
 
 /** null / undefined / 'general' = home brand mode, no specialist scene. */
 export type ChatAgentKey = AgentKey | 'general' | null | undefined;
@@ -483,10 +484,10 @@ export function startChatStream(
     try {
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
-        headers: {
+        headers: authHeaders({
           Accept: 'text/event-stream',
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           message: input.message,
           agentKey: normalizeAgentKey(input.agentKey),
@@ -496,6 +497,9 @@ export function startChatStream(
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          notifyAuthExpired();
+        }
         const detail = await response.text().catch(() => '');
         throw new Error(detail || `聊天服务响应异常（${response.status}）`);
       }

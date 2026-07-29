@@ -2,6 +2,8 @@ import { lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { Spin } from 'antd';
 import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import RequireAdmin from './auth/RequireAdmin';
+import RequireAuth from './auth/RequireAuth';
 import AppShell from './components/AppShell/AppShell';
 import { isAgentKey } from './data/agents';
 
@@ -16,6 +18,7 @@ const KnowledgeGraphPage = lazy(
 const KnowledgeBasePage = lazy(
   () => import('./pages/KnowledgeBasePage/KnowledgeBasePage'),
 );
+const LoginPage = lazy(() => import('./pages/LoginPage/LoginPage'));
 
 function PageBoundary({ children }: { children: ReactNode }) {
   return (
@@ -58,42 +61,55 @@ function GeneralChatRoute() {
 export default function App() {
   return (
     <Routes>
-      <Route element={<AppShell />}>
-        <Route
-          index
-          element={
-            <PageBoundary>
-              <HomePage />
-            </PageBoundary>
-          }
-        />
-        <Route
-          path="agents"
-          element={
-            <PageBoundary>
-              <AgentCenterPage />
-            </PageBoundary>
-          }
-        />
-        <Route
-          path="knowledge-graph"
-          element={
-            <PageBoundary>
-              <KnowledgeGraphPage />
-            </PageBoundary>
-          }
-        />
-        <Route
-          path="knowledge-base"
-          element={
-            <PageBoundary>
-              <KnowledgeBasePage />
-            </PageBoundary>
-          }
-        />
-        <Route path="chat" element={<GeneralChatRoute />} />
-        <Route path="chat/:agentKey" element={<SceneChatRoute />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+      <Route
+        path="/login"
+        element={
+          <PageBoundary>
+            <LoginPage />
+          </PageBoundary>
+        }
+      />
+
+      <Route element={<RequireAuth />}>
+        <Route element={<AppShell />}>
+          <Route
+            index
+            element={
+              <PageBoundary>
+                <HomePage />
+              </PageBoundary>
+            }
+          />
+          <Route
+            path="agents"
+            element={
+              <PageBoundary>
+                <AgentCenterPage />
+              </PageBoundary>
+            }
+          />
+          <Route
+            path="knowledge-graph"
+            element={
+              <PageBoundary>
+                <KnowledgeGraphPage />
+              </PageBoundary>
+            }
+          />
+          <Route
+            path="knowledge-base"
+            element={
+              <PageBoundary>
+                <RequireAdmin>
+                  <KnowledgeBasePage />
+                </RequireAdmin>
+              </PageBoundary>
+            }
+          />
+          <Route path="chat" element={<GeneralChatRoute />} />
+          <Route path="chat/:agentKey" element={<SceneChatRoute />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
       </Route>
     </Routes>
   );

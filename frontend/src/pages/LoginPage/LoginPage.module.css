@@ -1,0 +1,188 @@
+.page {
+  width: 100%;
+  min-height: 100dvh;
+  overflow: auto;
+  background: var(--canvas);
+}
+
+.shell {
+  display: grid;
+  min-height: 100dvh;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+}
+
+.brandPane {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  padding: 48px 56px;
+  justify-content: flex-start;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  background:
+    radial-gradient(
+      120% 80% at 10% 0%,
+      rgba(43, 92, 255, 0.1),
+      transparent 55%
+    ),
+    linear-gradient(165deg, #f8f9fb 0%, #eef1f6 48%, #f4f5f7 100%);
+}
+
+.brandGlow {
+  position: absolute;
+  right: -12%;
+  bottom: -18%;
+  width: min(420px, 70%);
+  height: min(420px, 70%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(43, 92, 255, 0.12),
+    transparent 68%
+  );
+  pointer-events: none;
+}
+
+.brandContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.brandMark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  margin-bottom: 24px;
+  color: #ffffff;
+  font-size: 22px;
+  background: var(--primary);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(43, 92, 255, 0.22);
+}
+
+.brandTitle {
+  margin: 0 0 10px !important;
+  color: var(--text) !important;
+  font-size: clamp(28px, 3.2vw, 36px) !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.03em;
+  line-height: 1.15 !important;
+}
+
+.brandLead {
+  margin: 0 !important;
+  color: var(--text-secondary) !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+.formPane {
+  display: flex;
+  padding: 40px 32px;
+  justify-content: center;
+  align-items: center;
+  background: var(--canvas);
+}
+
+.card {
+  width: min(100%, 400px);
+  padding: 36px 32px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.cardHeader {
+  margin-bottom: 24px;
+}
+
+.cardTitle {
+  margin: 0 0 6px !important;
+  color: var(--text) !important;
+  font-size: 22px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.02em;
+}
+
+.cardSub {
+  font-size: 13px !important;
+}
+
+.alert {
+  margin-bottom: 18px;
+  border-radius: var(--radius-sm) !important;
+}
+
+.form :global(.ant-form-item-label > label) {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.inputIcon {
+  color: var(--text-tertiary);
+}
+
+.submitItem {
+  margin-bottom: 0 !important;
+  margin-top: 8px;
+}
+
+.submitButton {
+  height: 44px !important;
+  font-weight: 550 !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+}
+
+.submitButton:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .brandPane {
+    min-height: auto;
+    padding: 40px 24px 32px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brandMark {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 16px;
+    font-size: 18px;
+  }
+
+  .brandTitle {
+    font-size: 26px !important;
+  }
+
+  .brandLead {
+    font-size: 13px !important;
+  }
+
+  .formPane {
+    padding: 28px 20px 40px;
+    align-items: flex-start;
+  }
+
+  .card {
+    padding: 28px 22px 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submitButton:active {
+    transform: none;
+  }
+}

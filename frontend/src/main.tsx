@@ -7,6 +7,7 @@ import '@ant-design/x-markdown/themes/light.css';
 import '@fontsource-variable/outfit/wght.css';
 import 'antd/dist/reset.css';
 import App from './App';
+import { AuthProvider } from './auth/AuthContext';
 import './styles/global.css';
 
 const root = document.getElementById('root');
@@ -58,7 +59,9 @@ createRoot(root).render(
     }}
   >
     <BrowserRouter>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </BrowserRouter>
   </XProvider>,
 );

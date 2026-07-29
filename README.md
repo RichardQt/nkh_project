@@ -41,7 +41,14 @@
 6. 政策服务
 7. 科创资源
 
-系统不包含登录、账户、用户资料、历史记录、设置、模型选择、供应商选择或 API Key 管理界面。
+## 登录与权限
+
+- 访问业务页前需登录（`/login`）
+- 密码使用 bcrypt 哈希存储于 SQLite；会话为不透明 token（`Authorization: Bearer`），有效期 7 天
+- 演示账号（启动时自动 seed）：
+  - 管理员：`admin` / `nkh@2026`（可见「知识库设置」）
+  - 普通用户：`test0` / `nkh@2026`（不可见知识库设置）
+- 对话历史按用户隔离
 
 ## 本地启动
 
@@ -82,9 +89,11 @@ npm run dev
 
 ## 接口（Backend A）
 
-- `GET /api/health`
-- `GET /api/functions`：查看 function 映射与当前字段投影
-- `POST /api/chat/stream`：SSE 代理
+- `GET /api/health`（公开）
+- `POST /api/auth/login`、`GET /api/auth/me`、`POST /api/auth/logout`
+- `GET /api/functions`：查看 function 映射与当前字段投影（需登录）
+- `POST /api/chat/stream`：SSE 代理（需登录）
+- `GET /api/conversations*`：对话历史（需登录，按用户隔离）
 
 流式请求示例：
 

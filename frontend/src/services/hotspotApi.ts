@@ -1,5 +1,6 @@
 import type { HotspotSection, HotspotsResponse } from '../types/hotspot';
 import type { DisplayField, RelatedEntryRow } from '../types/chat';
+import { authHeaders, notifyAuthExpired } from './http';
 
 function asString(value: unknown): string {
   if (value == null) {
@@ -70,11 +71,14 @@ export async function fetchHotspots(
 ): Promise<HotspotsResponse> {
   const response = await fetch('/api/hotspots', {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers: authHeaders({ Accept: 'application/json' }),
     signal,
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      notifyAuthExpired();
+    }
     const detail = await response.text().catch(() => '');
     throw new Error(detail || `热点推荐加载失败 (${response.status})`);
   }
