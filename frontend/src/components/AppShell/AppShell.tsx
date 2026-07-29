@@ -4,6 +4,7 @@ import {
   ArrowLeftOutlined,
   MenuOutlined,
   RobotOutlined,
+  ShareAltOutlined,
 } from '@ant-design/icons';
 import { Button, Divider, Drawer, Layout, Typography } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -39,6 +40,9 @@ function SidebarPanel({
       activePath.startsWith('/chat/')) &&
     !inConversationDetail;
   const agentsActive = activePath === '/agents';
+  const kgActive =
+    activePath === '/knowledge-graph' ||
+    activePath.startsWith('/knowledge-graph/');
 
   return (
     <div className={styles.sidebarPanel}>
@@ -95,6 +99,18 @@ function SidebarPanel({
           aria-current={agentsActive ? 'page' : undefined}
         >
           智能体中心
+        </Button>
+
+        <Button
+          type="default"
+          icon={<ShareAltOutlined />}
+          size="large"
+          block
+          className={`${styles.navEntryButton} ${kgActive ? styles.navEntryButtonActive : ''}`}
+          onClick={() => onNavigate('/knowledge-graph')}
+          aria-current={kgActive ? 'page' : undefined}
+        >
+          知识图谱
         </Button>
       </nav>
 

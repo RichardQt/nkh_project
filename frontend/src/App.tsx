@@ -10,6 +10,9 @@ const AgentCenterPage = lazy(
   () => import('./pages/AgentCenterPage/AgentCenterPage'),
 );
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
+const KnowledgeGraphPage = lazy(
+  () => import('./pages/KnowledgeGraphPage/KnowledgeGraphPage'),
+);
 
 function PageBoundary({ children }: { children: ReactNode }) {
   return (
@@ -66,6 +69,14 @@ export default function App() {
           element={
             <PageBoundary>
               <AgentCenterPage />
+            </PageBoundary>
+          }
+        />
+        <Route
+          path="knowledge-graph"
+          element={
+            <PageBoundary>
+              <KnowledgeGraphPage />
             </PageBoundary>
           }
         />
