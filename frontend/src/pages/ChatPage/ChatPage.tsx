@@ -706,19 +706,26 @@ function clarityDescription(state: ChatThoughtState): ReactNode {
   }
 }
 
-function reasoningDescription(state: ChatThoughtState): string {
+const REASONING_PROGRESS_STEPS = [
+  '正在匹配知识库...',
+  '正在关联相关知识...',
+  '正在推理生成答案...',
+] as const;
+
+const REASONING_STEP_INTERVAL_MS = 900;
+
+function reasoningDescriptionText(state: ChatThoughtState): string {
   switch (state.reasoning.status) {
     case 'loading':
-      return '正在分析并生成回答';
+      return REASONING_PROGRESS_STEPS.join(' ');
     case 'success':
-      return '分析完成';
+      return '思考完成';
     case 'error':
-      return '分析失败';
+      return '思考失败';
     case 'abort':
-      return '已停止分析';
+      return '已停止思考';
     default: {
-      const needsClarification =
-        shouldAskFollowup(state);
+      const needsClarification = shouldAskFollowup(state);
       if (needsClarification) {
         return '等待补充信息后继续';
       }
@@ -729,9 +736,73 @@ function reasoningDescription(state: ChatThoughtState): string {
   }
 }
 
+function ReasoningDescription({
+  status,
+  reduceMotion,
+  pendingText,
+}: {
+  status: ThoughtStepStatus;
+  reduceMotion: boolean | null;
+  pendingText: string;
+}) {
+  const [visibleCount, setVisibleCount] = useState(() =>
+    status === 'loading' ? 1 : 0,
+  );
+
+  useEffect(() => {
+    if (status !== 'loading') {
+      setVisibleCount(0);
+      return;
+    }
+
+    setVisibleCount(1);
+    if (reduceMotion) {
+      setVisibleCount(REASONING_PROGRESS_STEPS.length);
+      return;
+    }
+
+    let step = 1;
+    const timer = window.setInterval(() => {
+      step += 1;
+      setVisibleCount(Math.min(step, REASONING_PROGRESS_STEPS.length));
+      if (step >= REASONING_PROGRESS_STEPS.length) {
+        window.clearInterval(timer);
+      }
+    }, REASONING_STEP_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [status, reduceMotion]);
+
+  if (status === 'success') {
+    return <span className={styles.thoughtDescription}>思考完成</span>;
+  }
+  if (status === 'error') {
+    return <span className={styles.thoughtDescription}>思考失败</span>;
+  }
+  if (status === 'abort') {
+    return <span className={styles.thoughtDescription}>已停止思考</span>;
+  }
+  if (status !== 'loading') {
+    return <span className={styles.thoughtDescription}>{pendingText}</span>;
+  }
+
+  return (
+    <span className={styles.thoughtDescription}>
+      {REASONING_PROGRESS_STEPS.slice(0, Math.max(visibleCount, 1)).map(
+        (line, index) => (
+          <span key={line} className={styles.reasoningStepLine}>
+            {index > 0 ? <br /> : null}
+            {line}
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
+
 function thoughtAnnouncement(state: ChatThoughtState): string {
   if (state.reasoning.status !== 'pending') {
-    return `深度思考：${reasoningDescription(state)}`;
+    return `深度思考：${reasoningDescriptionText(state)}`;
   }
   if (state.clarity.status === 'loading') {
     return '分析用户问题：正在分析用户问题';
@@ -813,13 +884,12 @@ function ThoughtProgress({
       key: 'reasoning',
       title: '深度思考',
       description: (
-        <span className={styles.thoughtDescription}>
-          {reasoningDescription(state)}
-        </span>
+        <ReasoningDescription
+          status={state.reasoning.status}
+          reduceMotion={reduceMotion}
+          pendingText={reasoningDescriptionText(state)}
+        />
       ),
-      content: message.thinkContent ? (
-        <div className={styles.thoughtStream}>{message.thinkContent}</div>
-      ) : undefined,
       status: toThoughtItemStatus(state.reasoning.status),
       blink: !reduceMotion && state.reasoning.status === 'loading',
     },
@@ -1440,6 +1510,10 @@ function AnswerSegment({
           interactive={Boolean(clarifyInteractive && onClarifySubmit)}
           onSubmit={(text) => onClarifySubmit?.(text)}
         />
+      ) : null}
+
+      {target.thinkContent ? (
+        <div className={styles.modelStream}>{target.thinkContent}</div>
       ) : null}
 
       {target.searchPreview ? (

@@ -199,12 +199,18 @@
   border-radius: var(--radius-sm);
 }
 
-.thoughtStream {
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.7;
+.reasoningStepLine {
+  display: inline;
+}
+
+.modelStream {
+  margin: 0;
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.72;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 
 /* —— 澄清补充（内联卡片，非弹窗） —— */

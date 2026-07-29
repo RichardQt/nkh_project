@@ -99,6 +99,7 @@ export interface AnswerTurn {
   /** Fallback / error plain text. */
   content: string;
   status: ChatMessageStatus;
+  /** Model output from event: token; rendered above related results. */
   thinkContent?: string;
   thoughtState?: ChatThoughtState;
   relatedEntries?: RelatedEntriesPayload;
@@ -117,7 +118,7 @@ export interface ChatMessage {
   status: ChatMessageStatus;
   kind: 'intro' | 'answer' | 'question';
   sourceQuestion?: string;
-  /** Streaming thinking chain text (event: token). */
+  /** Model output from event: token; rendered above related results. */
   thinkContent?: string;
   /** Structured workflow progress from node_start / node_end events. */
   thoughtState?: ChatThoughtState;
