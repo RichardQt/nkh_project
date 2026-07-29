@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   AppstoreOutlined,
   ArrowLeftOutlined,
+  DatabaseOutlined,
   MenuOutlined,
   RobotOutlined,
   ShareAltOutlined,
@@ -43,6 +44,9 @@ function SidebarPanel({
   const kgActive =
     activePath === '/knowledge-graph' ||
     activePath.startsWith('/knowledge-graph/');
+  const kbActive =
+    activePath === '/knowledge-base' ||
+    activePath.startsWith('/knowledge-base/');
 
   return (
     <div className={styles.sidebarPanel}>
@@ -111,6 +115,18 @@ function SidebarPanel({
           aria-current={kgActive ? 'page' : undefined}
         >
           知识图谱
+        </Button>
+
+        <Button
+          type="default"
+          icon={<DatabaseOutlined />}
+          size="large"
+          block
+          className={`${styles.navEntryButton} ${kbActive ? styles.navEntryButtonActive : ''}`}
+          onClick={() => onNavigate('/knowledge-base')}
+          aria-current={kbActive ? 'page' : undefined}
+        >
+          知识库设置
         </Button>
       </nav>
 

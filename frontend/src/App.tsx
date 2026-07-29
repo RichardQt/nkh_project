@@ -13,6 +13,9 @@ const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
 const KnowledgeGraphPage = lazy(
   () => import('./pages/KnowledgeGraphPage/KnowledgeGraphPage'),
 );
+const KnowledgeBasePage = lazy(
+  () => import('./pages/KnowledgeBasePage/KnowledgeBasePage'),
+);
 
 function PageBoundary({ children }: { children: ReactNode }) {
   return (
@@ -77,6 +80,14 @@ export default function App() {
           element={
             <PageBoundary>
               <KnowledgeGraphPage />
+            </PageBoundary>
+          }
+        />
+        <Route
+          path="knowledge-base"
+          element={
+            <PageBoundary>
+              <KnowledgeBasePage />
             </PageBoundary>
           }
         />
