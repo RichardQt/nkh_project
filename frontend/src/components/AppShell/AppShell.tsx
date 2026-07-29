@@ -140,7 +140,18 @@ export default function AppShell() {
   const handleDeletedConversation = (id: string) => {
     if (activeConversationId === id) {
       setDrawerOpen(false);
-      navigate('/');
+      // Stay on the current chat route; clear cid so ChatPage opens a blank session.
+      const params = new URLSearchParams(location.search);
+      params.delete('cid');
+      const nextSearch = params.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : '',
+          hash: location.hash,
+        },
+        { replace: true },
+      );
     }
   };
 
