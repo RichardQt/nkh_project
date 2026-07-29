@@ -84,10 +84,20 @@ export default function HomePage() {
 
     setComposerFocused(false);
 
+    // 每次从首页发起对话都生成唯一 sessionId（问题重复也不复用）
+    const sessionId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
     // 有选中入口则带上 scene key，供后端 A 识别场景；对话本身统一走接口
     const path = selectedKey ? `/chat/${selectedKey}` : '/chat';
-    navigate(`${path}?q=${encodeURIComponent(question)}`, {
-      state: { initialQuestion: question },
+    const params = new URLSearchParams({
+      q: question,
+      sessionId,
+    });
+    navigate(`${path}?${params.toString()}`, {
+      state: { initialQuestion: question, sessionId },
     });
   };
 

@@ -15,11 +15,24 @@
 }
 
 .messageViewport {
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
 }
 
-.bubbleList,
+/* Gray 热点信息推荐 sits above the message list (first question). */
+.hotspotSlot {
+  flex: 0 0 auto;
+  padding: 0 0 4px;
+}
+
+.bubbleList {
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 100%;
+}
+
 .bubbleScroll {
   height: 100%;
 }

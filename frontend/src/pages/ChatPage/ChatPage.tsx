@@ -29,6 +29,7 @@ import type {
 import { Drawer, Empty, List, Spin, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import HotspotBar from '../../components/HotspotBar/HotspotBar';
 import { KnowledgeGraphModal } from '../../components/KnowledgeGraph/KnowledgeGraphModal';
 import {
   SceneResultPanel,
@@ -72,6 +73,8 @@ import styles from './ChatPage.module.css';
 
 interface ChatLocationState {
   initialQuestion?: string;
+  /** 首页每次发起对话下发的唯一后端 session id */
+  sessionId?: string;
 }
 
 interface ChatPageProps {
@@ -127,13 +130,32 @@ function createIntroMessage(
   };
 }
 
+function createBackendSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function readSessionIdFromState(state: unknown): string {
+  if (!state || typeof state !== 'object') {
+    return '';
+  }
+  return String((state as ChatLocationState).sessionId ?? '').trim();
+}
+
 /**
  * Resolve session id for Backend A / B.
- * Mock 联调：URL 加 `?sid=1`（正常）或 `?sid=2`（澄清）；
- * 未指定时沿用 sessionStorage，否则生成新 id。
- * 历史对话恢复时会写入指定 sessionId。
+ * - 首页发起：URL/state 带唯一 sessionId（每次新建，问题重复也不复用）
+ * - Mock 联调：URL 加 `?sid=1`（正常）或 `?sid=2`（澄清）
+ * - 历史对话恢复时会写入指定 sessionId
+ * - 其它情况沿用 sessionStorage，否则生成新 id
  */
-function resolveSessionId(sessionKey: string, search: string): string {
+function resolveSessionId(
+  sessionKey: string,
+  search: string,
+  state?: unknown,
+): string {
   const key = sessionIdStorageKey(sessionKey);
   const params = new URLSearchParams(search);
   const fromQuery =
@@ -141,10 +163,22 @@ function resolveSessionId(sessionKey: string, search: string): string {
     params.get('sessionId')?.trim() ||
     params.get('session_id')?.trim() ||
     '';
+  const fromState = readSessionIdFromState(state);
 
-  if (fromQuery === '1' || fromQuery === '2') {
-    sessionStorage.setItem(key, fromQuery);
-    return fromQuery;
+  // Explicit id always wins (home UUID, mock 1/2, history restore via URL).
+  const explicit = fromQuery || fromState;
+  if (explicit) {
+    sessionStorage.setItem(key, explicit);
+    return explicit;
+  }
+
+  // Fresh entry from home-style `?q=` without bound conversation: never reuse.
+  const hasEntryQuestion = Boolean(params.get('q')?.trim());
+  const hasConversationId = Boolean(params.get('cid')?.trim());
+  if (hasEntryQuestion && !hasConversationId) {
+    const next = createBackendSessionId();
+    sessionStorage.setItem(key, next);
+    return next;
   }
 
   const existing = sessionStorage.getItem(key)?.trim();
@@ -152,10 +186,7 @@ function resolveSessionId(sessionKey: string, search: string): string {
     return existing;
   }
 
-  const next =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const next = createBackendSessionId();
   sessionStorage.setItem(key, next);
   return next;
 }
@@ -1538,7 +1569,9 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const routeConversationId = readConversationIdFromSearch(location.search);
-  const sessionIdRef = useRef(resolveSessionId(sessionKey, location.search));
+  const sessionIdRef = useRef(
+    resolveSessionId(sessionKey, location.search, location.state),
+  );
   // Bound conversation id (set on first send or after history restore).
   const conversationIdRef = useRef<string | null>(null);
   /** Last conversation id whose messages are already in React state. */
@@ -1552,10 +1585,24 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   );
   const [historyError, setHistoryError] = useState<string | null>(null);
 
-  // Mock 联调：URL `?sid=1|2` 变化时同步 sessionId（不影响其它逻辑）
+  // 仅当 URL/state 显式携带 sessionId 时同步（避免 ?q= 路径重复 mint）
   useEffect(() => {
-    sessionIdRef.current = resolveSessionId(sessionKey, location.search);
-  }, [location.search, sessionKey]);
+    const params = new URLSearchParams(location.search);
+    const fromQuery =
+      params.get('sid')?.trim() ||
+      params.get('sessionId')?.trim() ||
+      params.get('session_id')?.trim() ||
+      '';
+    const fromState = readSessionIdFromState(location.state);
+    if (!fromQuery && !fromState) {
+      return;
+    }
+    sessionIdRef.current = resolveSessionId(
+      sessionKey,
+      location.search,
+      location.state,
+    );
+  }, [location.search, location.state, sessionKey]);
   const reduceMotion = useReducedMotion();
   const [value, setValue] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
@@ -1626,6 +1673,13 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       params.set('cid', id);
       // Drop one-shot entry params once conversation is established.
       params.delete('q');
+      params.delete('sessionId');
+      params.delete('session_id');
+      // Keep mock sid=1|2 for local SSE fixtures; strip other sid values.
+      const sid = params.get('sid')?.trim();
+      if (sid && sid !== '1' && sid !== '2') {
+        params.delete('sid');
+      }
       const nextSearch = params.toString();
       navigate(
         {
@@ -1708,10 +1762,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         sessionStorage.removeItem(conversationIdStorageKey(sessionKey));
         sessionStorage.removeItem(pendingStorageKey(sessionKey));
         // Fresh backend session for a brand-new conversation.
-        const freshSession =
-          typeof crypto !== 'undefined' && 'randomUUID' in crypto
-            ? crypto.randomUUID()
-            : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const freshSession = createBackendSessionId();
         sessionStorage.setItem(sessionIdStorageKey(sessionKey), freshSession);
         sessionIdRef.current = freshSession;
         setMessages([createIntroMessage(sessionKey, agentKey)]);
@@ -2808,6 +2859,9 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     <main className={styles.page}>
       <section className={styles.conversation} aria-label={`${displayName}对话`}>
         <div className={styles.messageViewport}>
+          <div className={styles.hotspotSlot}>
+            <HotspotBar />
+          </div>
           <Bubble.List
             ref={bubbleListRef}
             items={bubbleItems}

@@ -1,0 +1,231 @@
+/* Conversation detail: gray trigger above first question + modal lists */
+
+.triggerWrap {
+  display: flex;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 0;
+  justify-content: flex-start;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  color: #6b7280;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 150ms var(--ease-out),
+    background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out);
+}
+
+.trigger:hover {
+  color: #4b5563;
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
+
+.trigger:active {
+  transform: scale(0.98);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  outline-offset: 2px;
+}
+
+.triggerIcon {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.modal :global(.ant-modal-title) {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.loadingState {
+  display: flex;
+  min-height: 120px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.errorState {
+  display: flex;
+  min-height: 140px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0 16px;
+}
+
+.module {
+  margin-bottom: 16px;
+}
+
+.module:last-child {
+  margin-bottom: 4px;
+}
+
+.moduleHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+
+.moduleTitle {
+  color: var(--text) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+}
+
+.moduleCount {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.listItem:last-child {
+  border-bottom: 0;
+}
+
+.itemTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detailBtn {
+  flex: 0 0 auto;
+  height: auto !important;
+  padding: 0 4px !important;
+  color: var(--primary) !important;
+  font-size: 13px !important;
+}
+
+.detailBtn:hover {
+  color: var(--primary-hover) !important;
+}
+
+.detailTitleBlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.detailName {
+  min-width: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.detailBadge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.detailDrawer :global(.ant-drawer-header) {
+  padding-bottom: 12px;
+}
+
+.detailDrawer :global(.ant-drawer-title) {
+  margin: 0;
+}
+
+.fieldList {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 10px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fieldRow:last-child {
+  border-bottom: 0;
+}
+
+.fieldLabel {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.fieldValue {
+  margin: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.emptyHint {
+  font-size: 13px !important;
+}
+
+@media (max-width: 520px) {
+  .fieldRow {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

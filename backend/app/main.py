@@ -64,6 +64,7 @@ from app.field_schema import (
     selected_detail_fields,
     selected_fields,
 )
+from app.hotspot_store import get_hotspots
 from app.proxy_stream import stream_from_backend_b
 
 
@@ -232,6 +233,25 @@ def api_delete_conversation(conversation_id: str) -> dict[str, Any]:
     if not deleted:
         raise HTTPException(status_code=404, detail="对话不存在")
     return {"ok": True, "id": conversation_id}
+
+
+@app.get("/api/hotspots")
+async def api_hotspots(request: Request) -> dict[str, Any]:
+    """Hotspot recommendations: top 5 rows per sheet from ``英文字段.xlsx``.
+
+    Fields follow list-card projection in ``信息匹配.md`` / ``field_schema``.
+    Query: ``?reload=1`` clears the in-process cache (dev only).
+    """
+
+    reload = request.query_params.get("reload") in ("1", "true", "yes")
+    try:
+        return get_hotspots(reload=reload)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - surface data load failures cleanly
+        raise HTTPException(
+            status_code=500, detail=f"热点数据加载失败：{exc}"
+        ) from exc
 
 
 @app.get("/api/functions")
