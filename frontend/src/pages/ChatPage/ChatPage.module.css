@@ -420,17 +420,6 @@
 
 .entryItem {
   display: block !important;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.entryItem:hover {
-  background: var(--surface-muted);
-}
-
-.entryItem:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
 }
 
 .entryHead {
@@ -445,6 +434,35 @@
   color: var(--text) !important;
   font-size: 14.5px !important;
   line-height: 1.45 !important;
+}
+
+.entryHint {
+  flex-shrink: 0;
+  margin: 0;
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  opacity: 0.85;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.entryHint:hover {
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.entryHint:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+  opacity: 1;
 }
 
 .entryFields {
@@ -502,15 +520,6 @@
   font-size: 12px !important;
   font-weight: 500 !important;
   letter-spacing: 0.015em;
-}
-
-.entryHint {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 500;
-  opacity: 0.85;
 }
 
 .detailDrawer :global(.ant-drawer-header) {

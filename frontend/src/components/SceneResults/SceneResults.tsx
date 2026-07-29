@@ -203,15 +203,7 @@ function PolicyLevelBlock({
         {label}
         <span className={styles.count}>{count}</span>
       </Typography.Text>
-      {count > 0 ? (
-        <div className={styles.cardList}>{children}</div>
-      ) : (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={`暂无${label}`}
-          className={styles.policyEmpty}
-        />
-      )}
+      <div className={styles.cardList}>{children}</div>
     </div>
   );
 }
@@ -234,6 +226,8 @@ function PolicyMatchSection({
   const provincial = group?.provincial ?? [];
   const municipal = group?.municipal ?? [];
   const total = provincial.length + municipal.length;
+  const hasProvincial = provincial.length > 0;
+  const hasMunicipal = municipal.length > 0;
 
   return (
     <section className={styles.section} aria-label={title}>
@@ -245,29 +239,41 @@ function PolicyMatchSection({
         <span className={`${styles.badge} ${badgeClass}`}>{badgeText}</span>
       </div>
 
-      <div className={styles.policyLevelStack}>
-        <PolicyLevelBlock label="省级政策" count={provincial.length}>
-          {provincial.map((item) => (
-            <PolicyEntryCard
-              key={item.id}
-              title={item.item_name}
-              fields={provincialListFields(item)}
-              onOpen={() => onOpenProvincial(item)}
-            />
-          ))}
-        </PolicyLevelBlock>
+      {total === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={`暂无${title}`}
+          className={styles.policyEmpty}
+        />
+      ) : (
+        <div className={styles.policyLevelStack}>
+          {hasProvincial ? (
+            <PolicyLevelBlock label="省级政策" count={provincial.length}>
+              {provincial.map((item) => (
+                <PolicyEntryCard
+                  key={item.id}
+                  title={item.item_name}
+                  fields={provincialListFields(item)}
+                  onOpen={() => onOpenProvincial(item)}
+                />
+              ))}
+            </PolicyLevelBlock>
+          ) : null}
 
-        <PolicyLevelBlock label="市级政策" count={municipal.length}>
-          {municipal.map((item) => (
-            <PolicyEntryCard
-              key={item.id}
-              title={item.policy_category}
-              fields={municipalListFields(item)}
-              onOpen={() => onOpenMunicipal(item)}
-            />
-          ))}
-        </PolicyLevelBlock>
-      </div>
+          {hasMunicipal ? (
+            <PolicyLevelBlock label="市级政策" count={municipal.length}>
+              {municipal.map((item) => (
+                <PolicyEntryCard
+                  key={item.id}
+                  title={item.policy_category}
+                  fields={municipalListFields(item)}
+                  onOpen={() => onOpenMunicipal(item)}
+                />
+              ))}
+            </PolicyLevelBlock>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }

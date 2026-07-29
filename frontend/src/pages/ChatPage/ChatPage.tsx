@@ -777,22 +777,19 @@ function EntrySectionList({
           <List.Item
             key={`${sectionKey}-${index}-${titleText}`}
             className={styles.entryItem}
-            onClick={() => onOpenDetail(item, index)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onOpenDetail(item, index);
-              }
-            }}
-            tabIndex={0}
-            role="button"
-            aria-label={`查看详情：${titleText}`}
           >
             <div className={styles.entryHead}>
               <Typography.Text strong className={styles.entryTitle}>
                 {titleText}
               </Typography.Text>
-              <span className={styles.entryHint}>详情</span>
+              <button
+                type="button"
+                className={styles.entryHint}
+                onClick={() => onOpenDetail(item, index)}
+                aria-label={`查看详情：${titleText}`}
+              >
+                详情
+              </button>
             </div>
             <FieldDefinitionList fields={cardFields} item={item} />
           </List.Item>
@@ -2029,18 +2026,25 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               const formatGroup = (
                 label: string,
                 group: typeof scene.fullyMatched,
-              ) =>
-                [
-                  label,
-                  '省级政策',
-                  ...(group.provincial.length
-                    ? group.provincial.map(formatProvincial)
-                    : ['（暂无）']),
-                  '市级政策',
-                  ...(group.municipal.length
-                    ? group.municipal.map(formatMunicipal)
-                    : ['（暂无）']),
-                ].join('\n\n');
+              ) => {
+                const parts = [label];
+                if (group.provincial.length) {
+                  parts.push(
+                    '省级政策',
+                    ...group.provincial.map(formatProvincial),
+                  );
+                }
+                if (group.municipal.length) {
+                  parts.push(
+                    '市级政策',
+                    ...group.municipal.map(formatMunicipal),
+                  );
+                }
+                if (!group.provincial.length && !group.municipal.length) {
+                  parts.push('（暂无）');
+                }
+                return parts.join('\n\n');
+              };
               copyParts.push(
                 [
                   formatGroup('完全满足政策', scene.fullyMatched),
