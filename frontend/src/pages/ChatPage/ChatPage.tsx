@@ -35,7 +35,7 @@ import {
   SearchPreviewPanel,
 } from '../../components/SceneResults/SceneResults';
 import { getAgent } from '../../data/agents';
-import { resolveKgQuery } from '../../data/kgFieldMap';
+import { resolveKgQueries } from '../../data/kgFieldMap';
 import {
   sceneIntroCopy,
   scenePlaceholder,
@@ -729,6 +729,70 @@ interface EntryDetailState {
   listKey?: string;
 }
 
+function KgValueLinks({
+  fieldLabel,
+  display,
+  targets,
+  className,
+  onOpenKg,
+}: {
+  fieldLabel: string;
+  display: string;
+  targets: Array<{ entityType: string; vid: string }>;
+  className: string;
+  onOpenKg: (target: KgQueryTarget) => void;
+}) {
+  if (!targets.length) {
+    return <>{display}</>;
+  }
+
+  // Single target: keep original full display text as the link label.
+  if (targets.length === 1) {
+    const kg = targets[0];
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={() =>
+          onOpenKg({
+            entityType: kg.entityType,
+            vid: kg.vid,
+            label: `${fieldLabel}：${kg.vid}`,
+          })
+        }
+        title="查看知识图谱"
+      >
+        {display}
+      </button>
+    );
+  }
+
+  // Multi-value (服务领域 / 产业领域 split by 、): each segment is a separate query.
+  return (
+    <span className={styles.kgMultiValue}>
+      {targets.map((kg, index) => (
+        <span key={`${kg.entityType}-${kg.vid}-${index}`}>
+          {index > 0 ? <span className={styles.kgValueSep}>、</span> : null}
+          <button
+            type="button"
+            className={className}
+            onClick={() =>
+              onOpenKg({
+                entityType: kg.entityType,
+                vid: kg.vid,
+                label: `${fieldLabel}：${kg.vid}`,
+              })
+            }
+            title="查看知识图谱"
+          >
+            {kg.vid}
+          </button>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function FieldDefinitionList({
   fields,
   item,
@@ -750,30 +814,23 @@ function FieldDefinitionList({
     <dl className={className ?? styles.entryFields}>
       {fields.map((field) => {
         const display = formatCellValue(item[field.key]);
-        const kg =
-          onOpenKg && listKey
-            ? resolveKgQuery(listKey, field.key, item)
-            : null;
+        const kgTargets =
+          onOpenKg && listKey && display !== '-'
+            ? resolveKgQueries(listKey, field.key, item)
+            : [];
 
         return (
           <div key={field.key} className={styles.entryFieldRow}>
             <dt>{field.label}</dt>
             <dd>
-              {kg && onOpenKg && display !== '-' ? (
-                <button
-                  type="button"
+              {kgTargets.length > 0 && onOpenKg ? (
+                <KgValueLinks
+                  fieldLabel={field.label}
+                  display={display}
+                  targets={kgTargets}
                   className={styles.kgFieldLink}
-                  onClick={() =>
-                    onOpenKg({
-                      entityType: kg.entityType,
-                      vid: kg.vid,
-                      label: `${field.label}：${display}`,
-                    })
-                  }
-                  title="查看知识图谱"
-                >
-                  {display}
-                </button>
+                  onOpenKg={onOpenKg}
+                />
               ) : (
                 display
               )}
@@ -811,10 +868,10 @@ function EntrySectionList({
         const titleText = titleField
           ? formatCellValue(item[titleField.key])
           : `条目 ${index + 1}`;
-        const titleKg =
+        const titleKgTargets =
           titleField && titleText !== '-'
-            ? resolveKgQuery(sectionKey, titleField.key, item)
-            : null;
+            ? resolveKgQueries(sectionKey, titleField.key, item)
+            : [];
 
         return (
           <List.Item
@@ -822,23 +879,14 @@ function EntrySectionList({
             className={styles.entryItem}
           >
             <div className={styles.entryHead}>
-              {titleKg ? (
-                <button
-                  type="button"
+              {titleKgTargets.length > 0 && titleField ? (
+                <KgValueLinks
+                  fieldLabel={titleField.label}
+                  display={titleText}
+                  targets={titleKgTargets}
                   className={styles.kgTitleLink}
-                  onClick={() =>
-                    onOpenKg({
-                      entityType: titleKg.entityType,
-                      vid: titleKg.vid,
-                      label: titleField
-                        ? `${titleField.label}：${titleText}`
-                        : titleText,
-                    })
-                  }
-                  title="查看知识图谱"
-                >
-                  {titleText}
-                </button>
+                  onOpenKg={onOpenKg}
+                />
               ) : (
                 <Typography.Text strong className={styles.entryTitle}>
                   {titleText}

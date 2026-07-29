@@ -506,6 +506,20 @@
   border-radius: 2px;
 }
 
+/* Multi-value KG fields (服务领域 / 产业领域 split by 、) */
+.kgMultiValue {
+  display: inline;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.kgValueSep {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
 .entryFields {
   display: grid;
   gap: 6px;

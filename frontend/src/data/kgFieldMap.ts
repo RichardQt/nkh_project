@@ -131,34 +131,75 @@ export function getKgFieldBinding(
   return KG_FIELD_MAP[listOrSectionKey]?.[fieldKey] ?? null;
 }
 
+/** Entity types whose multi-value vid must be split by Chinese顿号 `、`. */
+const VID_SPLIT_ENTITY_TYPES = new Set(['服务领域', '产业领域']);
+
+export function shouldSplitKgVid(entityType: string): boolean {
+  return VID_SPLIT_ENTITY_TYPES.has(entityType);
+}
+
 /**
- * Resolve entity_type + vid for a list-row field click.
- * Returns null when the field is not KG-linked or vid is empty.
+ * Split multi-value text by顿号 for KG vid.
+ * Only applied for 服务领域 / 产业领域.
  */
-export function resolveKgQuery(
+export function splitKgVidParts(entityType: string, raw: string): string[] {
+  const text = raw.trim();
+  if (!text || text === '-') {
+    return [];
+  }
+  if (!shouldSplitKgVid(entityType)) {
+    return [text];
+  }
+  return text
+    .split('、')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+export interface KgResolvedTarget {
+  entityType: string;
+  vid: string;
+}
+
+/**
+ * Resolve one or more KG targets for a list-row field.
+ * For 服务领域 / 产业领域, values like `A、B` become two targets with vid `A` and `B`.
+ */
+export function resolveKgQueries(
   listOrSectionKey: string | undefined,
   fieldKey: string,
   row: Record<string, string | number | boolean | null | undefined>,
-): { entityType: string; vid: string } | null {
+): KgResolvedTarget[] {
   const binding = getKgFieldBinding(listOrSectionKey, fieldKey);
   if (!binding) {
-    return null;
+    return [];
   }
 
   const raw =
     binding.vidFrom === 'self' ? row[fieldKey] : row[binding.vidFrom];
 
   if (raw == null || raw === '') {
-    return null;
+    return [];
   }
   if (typeof raw === 'boolean') {
-    return null;
+    return [];
   }
 
-  const vid = String(raw).trim();
-  if (!vid || vid === '-') {
-    return null;
-  }
+  const parts = splitKgVidParts(binding.entityType, String(raw));
+  return parts.map((vid) => ({
+    entityType: binding.entityType,
+    vid,
+  }));
+}
 
-  return { entityType: binding.entityType, vid };
+/**
+ * Resolve a single entity_type + vid (first segment when multi-value).
+ * Prefer {@link resolveKgQueries} when rendering multi-part clickable values.
+ */
+export function resolveKgQuery(
+  listOrSectionKey: string | undefined,
+  fieldKey: string,
+  row: Record<string, string | number | boolean | null | undefined>,
+): KgResolvedTarget | null {
+  return resolveKgQueries(listOrSectionKey, fieldKey, row)[0] ?? null;
 }
