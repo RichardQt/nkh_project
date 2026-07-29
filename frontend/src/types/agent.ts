@@ -1,4 +1,4 @@
-/** 首页能力入口 key（仅作场景标识，不再是智能体人设）。 */
+/** 首页能力入口 / 智能体中心 key（场景标识）。 */
 export type AgentKey =
   | 'policy_recommend'
   | 'achievement_eval'
@@ -9,9 +9,11 @@ export type AgentKey =
   | 'enterprise_discover'
   | 'platform_discover';
 
-/** 导航项：只保留界面展示所需字段。 */
+/** 导航与智能体中心展示字段。 */
 export interface AgentDefinition {
   key: AgentKey;
   /** 按钮文案，如「政策推荐」 */
   label: string;
+  /** 智能体中心卡片副文案 */
+  description: string;
 }

@@ -290,9 +290,18 @@
   pointer-events: none;
 }
 
+.suggestionHint {
+  margin: 0;
+  padding: 10px 16px 2px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+  user-select: none;
+}
+
 .suggestionList {
   margin: 0;
-  padding: 6px 0;
+  padding: 2px 0 6px;
   list-style: none;
 }
 

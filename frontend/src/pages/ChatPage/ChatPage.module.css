@@ -25,19 +25,33 @@
 }
 
 .bubbleScroll {
-  padding: 4px 2px 24px;
+  /* Horizontal 0 so bubbles share the same left/right edge as the sender */
+  padding: 4px 0 24px;
   scrollbar-color: #c5cad3 transparent;
   scrollbar-width: thin;
+}
+
+/* Cancel ant-design/x default list gutters so content aligns with the composer */
+.bubbleList :global([class*='bubble-list-scroll-content']) {
+  padding-inline: 0 !important;
+}
+
+.bubbleList :global([class*='bubble-start']) {
+  padding-inline-end: 0 !important;
 }
 
 .assistantBubble {
   width: 100% !important;
   max-width: 100%;
-  padding-inline-end: 0 !important;
+  margin-inline: 0 !important;
+  padding-inline: 0 !important;
+  column-gap: 0 !important;
+  gap: 0 !important;
 }
 
 .assistantBubbleContent {
   width: 100%;
+  max-width: 100%;
   padding: 16px 18px !important;
   background: var(--surface) !important;
   border-color: var(--border) !important;
@@ -47,6 +61,8 @@
 
 .assistantBubbleBody {
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
   flex: 1 1 auto;
 }
 
@@ -60,6 +76,15 @@
   border: 1px solid transparent !important;
   border-radius: 14px 14px 4px 14px !important;
   box-shadow: none !important;
+}
+
+/* Answer footer: like / dislike active states */
+.feedbackLiked {
+  color: var(--primary) !important;
+}
+
+.feedbackDisliked {
+  color: var(--text-secondary) !important;
 }
 
 .answerContent {
@@ -137,28 +162,6 @@
 
 .thoughtChain {
   width: 100%;
-}
-
-.thoughtItem {
-  align-items: flex-start !important;
-}
-
-.thoughtItem > :last-child {
-  min-width: 0;
-  flex: 1;
-}
-
-.thoughtItemHeader {
-  min-width: 0;
-  gap: 2px;
-  padding-top: 1px;
-}
-
-.thoughtTitle {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.5;
 }
 
 .thoughtDescription {
@@ -625,12 +628,6 @@
   letter-spacing: 0.02em;
   background: var(--primary-soft);
   border-radius: 999px;
-}
-
-.generalAvatar {
-  color: #ffffff !important;
-  background: linear-gradient(145deg, #4b7dff 0%, #2b5cff 55%, #5b47e0 100%) !important;
-  border-radius: 12px !important;
 }
 
 .generalWelcome {

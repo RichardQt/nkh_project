@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  AppstoreOutlined,
   MenuOutlined,
   PlusOutlined,
   RobotOutlined,
@@ -16,43 +17,57 @@ interface SidebarPanelProps {
 }
 
 function SidebarPanel({ activePath, onNavigate }: SidebarPanelProps) {
-  const newChatActive = activePath === '/' || activePath.startsWith('/chat');
+  const newChatActive = activePath === '/' || activePath === '/chat';
+  const agentsActive =
+    activePath === '/agents' || activePath.startsWith('/chat/');
 
   return (
-		<div className={styles.sidebarPanel}>
-			<Button
-				type="text"
-				className={styles.brand}
-				onClick={() => onNavigate("/")}
-				aria-label="返回 AI 创新助手入口"
-			>
-				<span className={styles.brandMark} aria-hidden="true">
-					<RobotOutlined />
-				</span>
-				<span className={styles.brandText}>
-					<Typography.Text strong>AI 创新助手</Typography.Text>
-					<Typography.Text type="secondary">专注创新与研发</Typography.Text>
-				</span>
-			</Button>
+    <div className={styles.sidebarPanel}>
+      <Button
+        type="text"
+        className={styles.brand}
+        onClick={() => onNavigate('/')}
+        aria-label="返回 AI 创新助手入口"
+      >
+        <span className={styles.brandMark} aria-hidden="true">
+          <RobotOutlined />
+        </span>
+        <span className={styles.brandText}>
+          <Typography.Text strong>AI 创新助手</Typography.Text>
+          <Typography.Text type="secondary">专注创新与研发</Typography.Text>
+        </span>
+      </Button>
 
-			<nav className={styles.navigation} aria-label="主导航">
-				<Button
-					type="primary"
-					icon={<PlusOutlined />}
-					size="large"
-					block
-					ghost={!newChatActive}
-					className={styles.newChatButton}
-					onClick={() => onNavigate("/")}
-				>
-					新建对话
-				</Button>
-			</nav>
+      <nav className={styles.navigation} aria-label="主导航">
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          size="large"
+          block
+          ghost={!newChatActive}
+          className={styles.newChatButton}
+          onClick={() => onNavigate('/')}
+        >
+          新建对话
+        </Button>
 
-			<Divider className={styles.sidebarDivider} />
-			<div className={styles.sidebarBlank} aria-hidden="true" />
-		</div>
-	);
+        <Button
+          type="default"
+          icon={<AppstoreOutlined />}
+          size="large"
+          block
+          className={`${styles.navEntryButton} ${agentsActive ? styles.navEntryButtonActive : ''}`}
+          onClick={() => onNavigate('/agents')}
+          aria-current={agentsActive ? 'page' : undefined}
+        >
+          智能体中心
+        </Button>
+      </nav>
+
+      <Divider className={styles.sidebarDivider} />
+      <div className={styles.sidebarBlank} aria-hidden="true" />
+    </div>
+  );
 }
 
 export default function AppShell() {
@@ -65,9 +80,11 @@ export default function AppShell() {
     navigate(path);
   };
 
-  // 首页与对话页均不展示顶部导航条
+  // 首页、智能体中心与对话页均不展示顶部导航条
   const hideTopbar =
-    location.pathname === '/' || location.pathname.startsWith('/chat');
+    location.pathname === '/' ||
+    location.pathname === '/agents' ||
+    location.pathname.startsWith('/chat');
 
   return (
     <Layout className={styles.appLayout}>

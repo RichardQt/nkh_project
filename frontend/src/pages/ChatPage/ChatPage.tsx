@@ -6,7 +6,13 @@ import {
   useState,
 } from 'react';
 import type { ComponentRef, ReactNode } from 'react';
-import { RedoOutlined, RobotOutlined } from '@ant-design/icons';
+import {
+  DislikeFilled,
+  DislikeOutlined,
+  LikeFilled,
+  LikeOutlined,
+  RedoOutlined,
+} from '@ant-design/icons';
 import {
   Actions,
   Bubble,
@@ -20,16 +26,26 @@ import type {
   BubbleListProps,
   ThoughtChainProps,
 } from '@ant-design/x';
-import { Avatar, Drawer, Empty, List, Typography } from 'antd';
+import { Drawer, Empty, List, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { getAgent } from '../../data/agents';
+import {
+  sceneIntroCopy,
+  scenePlaceholder,
+} from '../../data/sceneMocks';
+import {
+  SceneResultPanel,
+  SearchPreviewPanel,
+} from '../../components/SceneResults/SceneResults';
 import {
   GENERIC_STREAM_ERROR_MESSAGE,
   startChatStream,
   type ChatStreamController,
 } from '../../services/chatStream';
+import { startSceneMockStream } from '../../services/sceneMockStream';
 import type { AgentKey } from '../../types/agent';
+import { isSceneMockAgentKey } from '../../types/scene';
 import type {
   AnswerTurn,
   ChatMessage,
@@ -53,6 +69,9 @@ interface ChatPageProps {
   /** 首页选中的能力入口 key；null 表示未选场景。 */
   agentKey: AgentKey | null;
 }
+
+/** Local-only thumbs feedback for completed assistant answers. */
+type MessageFeedback = 'like' | 'dislike';
 
 const CHAT_UI = {
   name: 'AI 创新赋能助手',
@@ -124,6 +143,10 @@ const INTENT_LABELS: Record<string, string> = {
   requirements: '找需求',
   expert_team: '找专家',
   enterprises: '找企业',
+  policies: '政策推荐',
+  achievement_eval: '成果评估',
+  research_direction: '研究方向',
+  platforms: '找平台',
 };
 
 function createThoughtState(): ChatThoughtState {
@@ -172,7 +195,10 @@ function finalizeStreamTarget(
   target: ChatMessage | AnswerTurn,
 ): ChatMessage | AnswerTurn {
   const hasOutput =
-    Boolean(target.thinkContent?.trim()) || Boolean(target.relatedEntries);
+    Boolean(target.thinkContent?.trim()) ||
+    Boolean(target.relatedEntries) ||
+    Boolean(target.sceneResult) ||
+    Boolean(target.searchPreview);
   const isClarificationResponse =
     target.thoughtState?.clarity.status === 'success' &&
     shouldAskFollowup(target.thoughtState) === true;
@@ -626,7 +652,7 @@ function ThoughtProgress({
   const items: ThoughtChainProps['items'] = [
     {
       key: 'intent',
-      title: <span className={styles.thoughtTitle}>判断用户意图</span>,
+      title: '判断用户意图',
       description: (
         <span className={styles.thoughtDescription}>
           {intentDescription(state)}
@@ -637,7 +663,7 @@ function ThoughtProgress({
     },
     {
       key: 'clarity',
-      title: <span className={styles.thoughtTitle}>分析用户问题</span>,
+      title: '分析用户问题',
       description: (
         <span className={styles.thoughtDescription}>
           {clarityDescription(state)}
@@ -648,7 +674,7 @@ function ThoughtProgress({
     },
     {
       key: 'reasoning',
-      title: <span className={styles.thoughtTitle}>深度思考</span>,
+      title: '深度思考',
       description: (
         <span className={styles.thoughtDescription}>
           {reasoningDescription(state)}
@@ -778,8 +804,10 @@ function EntrySectionList({
 
 function RelatedEntriesList({
   payload,
+  title = '相关结果',
 }: {
   payload: RelatedEntriesPayload;
+  title?: string;
 }) {
   const [detail, setDetail] = useState<EntryDetailState | null>(null);
 
@@ -837,10 +865,12 @@ function RelatedEntriesList({
 
   return (
     <div className={styles.entriesPanel}>
-      <Typography.Text className={styles.entriesTitle}>
-        相关结果
-        <span className={styles.entriesCount}>{totalCount}</span>
-      </Typography.Text>
+      {title ? (
+        <Typography.Text className={styles.entriesTitle}>
+          {title}
+          <span className={styles.entriesCount}>{totalCount}</span>
+        </Typography.Text>
+      ) : null}
 
       <div className={styles.entriesSections}>
         {sections.map((section) => (
@@ -1093,11 +1123,7 @@ function AnswerSegment({
   const status = target.status;
   const isStreaming = status === 'loading' || status === 'updating';
   const showThoughtProgress =
-    Boolean(target.thoughtState) ||
-    Boolean(target.thinkContent) ||
-    isStreaming ||
-    status === 'error' ||
-    status === 'abort';
+    Boolean(target.thoughtState) || Boolean(target.thinkContent);
 
   const clarity = target.thoughtState?.clarity;
   const needsClarify = segmentNeedsClarify(target);
@@ -1107,7 +1133,9 @@ function AnswerSegment({
     needsClarify &&
     Boolean(clarifyQuestion) &&
     !target.relatedEntries &&
-    !target.thinkContent;
+    !target.thinkContent &&
+    !target.sceneResult &&
+    !target.searchPreview;
 
   // 正常回答结束后展示推荐问题（与澄清面板互斥）
   const showFollowupPrompts =
@@ -1115,7 +1143,9 @@ function AnswerSegment({
     !needsClarify &&
     status === 'success' &&
     suggestedQuestions.length > 0 &&
-    (Boolean(target.relatedEntries) || Boolean(target.thinkContent));
+    (Boolean(target.relatedEntries) ||
+      Boolean(target.thinkContent) ||
+      Boolean(target.sceneResult));
 
   // ThoughtProgress expects ChatMessage-shaped fields; AnswerTurn is compatible enough.
   const progressMessage = target as ChatMessage;
@@ -1135,7 +1165,30 @@ function AnswerSegment({
         />
       ) : null}
 
-      {target.relatedEntries ? (
+      {target.searchPreview ? (
+        <SearchPreviewPanel
+          preview={target.searchPreview}
+          reduceMotion={reduceMotion}
+        />
+      ) : null}
+
+      {target.sceneResult ? (
+        <SceneResultPanel
+          result={target.sceneResult}
+          streaming={isStreaming}
+          expertsSlot={
+            target.sceneResult.kind === 'research_direction' &&
+            target.relatedEntries ? (
+              <RelatedEntriesList
+                payload={target.relatedEntries}
+                title=""
+              />
+            ) : null
+          }
+        />
+      ) : null}
+
+      {!target.sceneResult && target.relatedEntries ? (
         <RelatedEntriesList payload={target.relatedEntries} />
       ) : null}
 
@@ -1153,6 +1206,8 @@ function AnswerSegment({
         (status === 'success' &&
           !target.relatedEntries &&
           !target.thinkContent &&
+          !target.sceneResult &&
+          !target.searchPreview &&
           !showClarifyPanel)) ? (
         <Typography.Paragraph className={styles.fallbackText}>
           {target.content}
@@ -1244,13 +1299,20 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const reduceMotion = useReducedMotion();
   const [value, setValue] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
+  /** Per-message like / dislike (frontend only, not persisted). */
+  const [feedbackById, setFeedbackById] = useState<
+    Record<string, MessageFeedback | undefined>
+  >({});
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: `intro-${sessionKey}`,
       role: 'assistant',
-      content: scene
-        ? `当前场景：${scene.label}。${CHAT_UI.greeting}`
-        : CHAT_UI.greeting,
+      content: isSceneMockAgentKey(agentKey)
+        ? sceneIntroCopy(agentKey)
+        : scene
+          ? `当前场景：${scene.label}。${CHAT_UI.greeting}`
+          : CHAT_UI.greeting,
       status: 'success',
       kind: 'intro',
     },
@@ -1329,6 +1391,177 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           updateActiveTarget(current, answerId, turnId, updater),
         );
       };
+
+      if (isSceneMockAgentKey(agentKey)) {
+        requestRef.current = startSceneMockStream(
+          {
+            agentKey,
+            message: question,
+          },
+          {
+            onMeta: ({ fields }) => {
+              if (!isActiveTarget() || !fields?.length) {
+                return;
+              }
+              patchTarget((target) => ({ ...target, displayFields: fields }));
+            },
+            onNodeStart: (event) => {
+              if (
+                !isActiveTarget() ||
+                (event.node !== 'intent_classify' &&
+                  event.node !== 'followup_check' &&
+                  event.node !== 'clarify' &&
+                  event.node !== 'retrieval')
+              ) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thoughtState: updateThoughtNode(
+                  target.thoughtState,
+                  event,
+                  'start',
+                ),
+                status: 'updating',
+              }));
+            },
+            onNodeEnd: (event) => {
+              if (
+                !isActiveTarget() ||
+                (event.node !== 'intent_classify' &&
+                  event.node !== 'followup_check' &&
+                  event.node !== 'clarify' &&
+                  event.node !== 'retrieval')
+              ) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thoughtState: updateThoughtNode(
+                  target.thoughtState,
+                  event,
+                  'end',
+                ),
+                status: 'updating',
+              }));
+            },
+            onSuggestedQuestions: (questions) => {
+              if (!isActiveTarget() || !questions.length) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thoughtState: applySuggestedQuestions(
+                  target.thoughtState,
+                  questions,
+                ),
+                status: 'updating',
+              }));
+            },
+            onToken: (content) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thinkContent: `${target.thinkContent ?? ''}${content}`,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onRelatedEntries: (payload) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                relatedEntries: payload,
+                thoughtState: activateReasoning(target.thoughtState),
+                displayFields: payload.fields.length
+                  ? payload.fields
+                  : target.displayFields,
+                status: 'updating',
+              }));
+            },
+            onSearchPreview: (preview) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                searchPreview: preview,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onSceneResult: (result) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                sceneResult: result,
+                relatedEntries:
+                  result.kind === 'research_direction'
+                    ? result.experts
+                    : target.relatedEntries,
+                displayFields:
+                  result.kind === 'research_direction'
+                    ? result.experts.fields
+                    : target.displayFields,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onComplete: () => {
+              if (!isActiveTarget()) {
+                return;
+              }
+
+              activeAnswerRef.current = null;
+              activeTurnRef.current = null;
+              requestRef.current = null;
+              setRequesting(false);
+              sessionStorage.removeItem(pendingStorageKey(sessionKey));
+              setMessages((current) =>
+                updateActiveTarget(current, answerId, turnId, finalizeStreamTarget),
+              );
+            },
+            onError: (error) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+
+              activeAnswerRef.current = null;
+              activeTurnRef.current = null;
+              requestRef.current = null;
+              setRequesting(false);
+              if (error.name !== 'AbortError') {
+                sessionStorage.removeItem(pendingStorageKey(sessionKey));
+              }
+              const fallbackMessage =
+                error.name === 'AbortError'
+                  ? '已停止生成。'
+                  : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
+              setMessages((current) =>
+                updateActiveTarget(current, answerId, turnId, (target) => ({
+                  ...target,
+                  status: error.name === 'AbortError' ? 'abort' : 'error',
+                  thoughtState: stopThoughtState(
+                    target.thoughtState,
+                    error.name === 'AbortError' ? 'abort' : 'error',
+                  ),
+                  content:
+                    error.name === 'AbortError'
+                      ? target.content || fallbackMessage
+                      : fallbackMessage,
+                })),
+              );
+            },
+          },
+        );
+        return;
+      }
 
       requestRef.current = startChatStream(
         {
@@ -1654,18 +1887,6 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [messages, reduceMotion]);
 
-  const assistantAvatar = useMemo(
-    () => (
-      <Avatar
-        shape="square"
-        size={42}
-        icon={<RobotOutlined />}
-        className={styles.generalAvatar}
-      />
-    ),
-    [],
-  );
-
   const latestAnswerId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i]?.kind === 'answer') {
@@ -1681,7 +1902,6 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         placement: 'start',
         variant: 'outlined',
         shape: 'corner',
-        avatar: assistantAvatar,
         rootClassName: styles.assistantBubble,
         classNames: {
           body: styles.assistantBubbleBody,
@@ -1732,7 +1952,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         classNames: { content: styles.userBubbleContent },
       },
     }),
-    [assistantAvatar, isRequesting, latestAnswerId, reduceMotion, submit, submitInline],
+    [isRequesting, latestAnswerId, reduceMotion, submit, submitInline],
   );
 
   const bubbleItems: BubbleItemType[] = useMemo(
@@ -1761,6 +1981,102 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           }
           if (target.thoughtState?.clarity.clarifyQuestion) {
             copyParts.push(target.thoughtState.clarity.clarifyQuestion);
+          }
+          if (target.searchPreview) {
+            copyParts.push(
+              [
+                '搜索引擎结果',
+                `检索词：${target.searchPreview.query}`,
+                ...target.searchPreview.results.map(
+                  (item, index) =>
+                    [
+                      `${index + 1}. ${item.title}`,
+                      item.source,
+                      item.snippet,
+                      item.url,
+                    ].join('\n'),
+                ),
+              ].join('\n'),
+            );
+          }
+          if (target.sceneResult) {
+            const scene = target.sceneResult;
+            if (scene.kind === 'policy_recommend') {
+              const formatProvincial = (
+                item: (typeof scene.fullyMatched.provincial)[number],
+              ) =>
+                [
+                  `事项名称: ${item.item_name}`,
+                  `级别: ${item.level}`,
+                  `资助金额: ${item.funding_amount}`,
+                  `事项类别介绍: ${item.item_category_description}`,
+                  `项目介绍: ${item.project_description}`,
+                  `申报要求: ${item.application_requirements}`,
+                  `申报途径: ${item.application_channel}`,
+                  `申报网址: ${item.application_url}`,
+                  `相关政策文件名称: ${item.related_policy_document_name}`,
+                ].join('\n');
+              const formatMunicipal = (
+                item: (typeof scene.fullyMatched.municipal)[number],
+              ) =>
+                [
+                  `政策类别: ${item.policy_category}`,
+                  `支持区域: ${item.supported_region}`,
+                  `支持对象: ${item.supported_entities}`,
+                  `支持内容: ${item.support_content}`,
+                  `来源文件: ${item.source_document || '—'}`,
+                ].join('\n');
+              const formatGroup = (
+                label: string,
+                group: typeof scene.fullyMatched,
+              ) =>
+                [
+                  label,
+                  '省级政策',
+                  ...(group.provincial.length
+                    ? group.provincial.map(formatProvincial)
+                    : ['（暂无）']),
+                  '市级政策',
+                  ...(group.municipal.length
+                    ? group.municipal.map(formatMunicipal)
+                    : ['（暂无）']),
+                ].join('\n\n');
+              copyParts.push(
+                [
+                  formatGroup('完全满足政策', scene.fullyMatched),
+                  formatGroup('部分满足政策', scene.partiallyMatched),
+                ].join('\n\n'),
+              );
+            } else if (scene.kind === 'achievement_eval') {
+              copyParts.push(
+                scene.evaluations
+                  .map((item) =>
+                    [
+                      `评估对象: ${item.title}`,
+                      `总得分: ${item.total}/${item.maxTotal}`,
+                      '一、评分总结',
+                      '评分维度',
+                      ...item.dimensions.flatMap((dim) => [
+                        `${dim.label}: ${dim.score}/${dim.max}`,
+                        `亮点: ${dim.highlight}`,
+                        `不足: ${dim.weakness}`,
+                      ]),
+                      '推荐原因',
+                      item.reason,
+                    ].join('\n'),
+                  )
+                  .join('\n\n'),
+              );
+            } else {
+              copyParts.push(
+                [
+                  '推荐理由',
+                  scene.recommendReason,
+                  '研发方向总结',
+                  scene.summary,
+                ].join('\n'),
+              );
+            }
           }
           if (target.relatedEntries) {
             const related = target.relatedEntries;
@@ -1841,6 +2157,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           };
         }
 
+        const feedback = feedbackById[message.id];
+
         return {
           ...baseItem,
           footer: isCompletedAnswer ? (
@@ -1855,6 +2173,32 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                   ),
                 },
                 {
+                  key: 'like',
+                  label: '点赞',
+                  icon:
+                    feedback === 'like' ? (
+                      <LikeFilled
+                        className={styles.feedbackLiked}
+                        aria-label="已点赞"
+                      />
+                    ) : (
+                      <LikeOutlined aria-label="点赞" />
+                    ),
+                },
+                {
+                  key: 'dislike',
+                  label: '点踩',
+                  icon:
+                    feedback === 'dislike' ? (
+                      <DislikeFilled
+                        className={styles.feedbackDisliked}
+                        aria-label="已点踩"
+                      />
+                    ) : (
+                      <DislikeOutlined aria-label="点踩" />
+                    ),
+                },
+                {
                   key: 'retry',
                   label: '重新生成',
                   icon: <RedoOutlined aria-label="重新生成" />,
@@ -1863,13 +2207,29 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               onClick={({ key }) => {
                 if (key === 'retry' && message.sourceQuestion) {
                   submit(message.sourceQuestion);
+                  return;
+                }
+                if (key === 'like') {
+                  setFeedbackById((prev) => ({
+                    ...prev,
+                    [message.id]:
+                      prev[message.id] === 'like' ? undefined : 'like',
+                  }));
+                  return;
+                }
+                if (key === 'dislike') {
+                  setFeedbackById((prev) => ({
+                    ...prev,
+                    [message.id]:
+                      prev[message.id] === 'dislike' ? undefined : 'dislike',
+                  }));
                 }
               }}
             />
           ) : undefined,
         };
       }),
-    [displayName, messages, submit],
+    [displayName, feedbackById, messages, submit],
   );
 
   return (
@@ -1892,7 +2252,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             loading={isRequesting}
             autoSize={{ minRows: 1, maxRows: 6 }}
             submitType="enter"
-            placeholder={CHAT_UI.placeholder}
+            placeholder={
+              isSceneMockAgentKey(agentKey)
+                ? scenePlaceholder(agentKey)
+                : CHAT_UI.placeholder
+            }
             onChange={setValue}
             onSubmit={(next) => {
               submit(next);

@@ -21,13 +21,65 @@ const BRAND = {
   placeholder: '描述你的问题或目标，Enter 发送，Shift + Enter 换行',
 } as const;
 
-/** 首页输入框聚焦时的推荐问题（临时占位，后续可接接口）。 */
-const SUGGESTED_QUESTIONS = [
+/** 未选模块时的默认推荐问题。 */
+const DEFAULT_SUGGESTED_QUESTIONS = [
   '怎样提高高分子材料的耐老化性能？',
   '如何提升光伏发电系统的能量转化效率？',
   '如何有效增强高温合金的抗蠕变性能？',
   '怎样有效提升锂离子电池的能量密度而不牺牲其循环寿命？',
 ] as const;
+
+/** 各首页模块对应的推荐问题 */
+const MODULE_SUGGESTED_QUESTIONS: Record<AgentKey, readonly string[]> = {
+  policy_recommend: [
+    '有哪些支持高新技术企业的税收优惠政策？',
+    '如何申请省级科技专项资金？',
+    '中小企业数字化转型有哪些补贴政策？',
+    '知识产权质押融资相关政策有哪些？',
+  ],
+  achievement_eval: [
+    '一种同质外延生长单晶金刚石的籽晶衬底真空钎焊方法',
+    '如何评估该项成果的产业化成熟度与可行性？',
+    '单晶金刚石籽晶固定工艺的市场前景如何？',
+    '该真空钎焊方案相对现有工艺的创新点在哪里？',
+  ],
+  research_direction: [
+    '固态电池领域目前有哪些前沿研究方向？',
+    '如何结合产业需求选择合适的科研方向？',
+    '碳中和背景下材料科学有哪些重点方向？',
+    '人工智能与材料研发交叉有哪些机会点？',
+  ],
+  achievement_discover: [
+    '近三年国内有哪些高价值新材料成果？',
+    '如何发现与新能源相关的可转化成果？',
+    '有哪些适合中小企业落地的科技成果？',
+    '高校院所在先进制造领域有哪些代表性成果？',
+  ],
+  expert_discover: [
+    '如何找到新能源材料领域的权威专家？',
+    '有哪些专家擅长科技成果转化与产业化？',
+    '如何匹配适合我企业技术难题的专家？',
+    '人工智能交叉领域有哪些活跃科研团队？',
+  ],
+  demand_discover: [
+    '当前产业端在哪些技术领域需求最迫切？',
+    '如何发现与我司能力匹配的技术需求？',
+    '中小企业常见的技术痛点有哪些？',
+    '如何跟踪某细分赛道的最新需求动态？',
+  ],
+  enterprise_discover: [
+    '如何找到有合作意向的高新技术企业？',
+    '哪些企业在新材料领域布局较活跃？',
+    '如何筛选适合成果对接的潜在企业？',
+    '区域内有哪些重点培育的科技型企业？',
+  ],
+  platform_discover: [
+    '有哪些可支撑中试放大的公共技术平台？',
+    '如何找到适合检测认证的平台资源？',
+    '区域内有哪些开放共享的科研仪器平台？',
+    '如何对接产业创新中心或中试基地？',
+  ],
+};
 
 export default function HomePage() {
   const [selectedKey, setSelectedKey] = useState<AgentKey | null>(null);
@@ -136,6 +188,9 @@ export default function HomePage() {
 
   // 仅在聚焦且输入为空时展示，支持清空后再次弹出
   const showSuggestions = composerFocused && !value.trim();
+  const suggestedQuestions = selectedKey
+    ? MODULE_SUGGESTED_QUESTIONS[selectedKey]
+    : DEFAULT_SUGGESTED_QUESTIONS;
 
   return (
     <main className={styles.page}>
@@ -250,11 +305,12 @@ export default function HomePage() {
               <div
                 className={styles.suggestionPopup}
                 role="listbox"
-                aria-label="推荐问题"
+                aria-label="猜你想问"
               >
                 <span className={styles.suggestionCaret} aria-hidden />
+                <p className={styles.suggestionHint}>猜你想问：</p>
                 <ul className={styles.suggestionList}>
-                  {SUGGESTED_QUESTIONS.map((question) => (
+                  {suggestedQuestions.map((question) => (
                     <li key={question}>
                       <button
                         type="button"

@@ -103,6 +103,10 @@ export interface AnswerTurn {
   thoughtState?: ChatThoughtState;
   relatedEntries?: RelatedEntriesPayload;
   displayFields?: DisplayField[];
+  /** Local mock: fake search-engine panel for eval / research. */
+  searchPreview?: import('./scene').SearchPreviewState;
+  /** Local mock: structured scene result for top-three demo agents. */
+  sceneResult?: import('./scene').SceneResult;
 }
 
 export interface ChatMessage {
@@ -121,6 +125,10 @@ export interface ChatMessage {
   relatedEntries?: RelatedEntriesPayload;
   /** Field schema from meta (same as relatedEntries.fields when present). */
   displayFields?: DisplayField[];
+  /** Local mock: fake search-engine panel for eval / research. */
+  searchPreview?: import('./scene').SearchPreviewState;
+  /** Local mock: structured scene result for top-three demo agents. */
+  sceneResult?: import('./scene').SceneResult;
   /**
    * Follow-up rounds kept inside this assistant bubble
    * (clarify answers / recommended questions), not new chat bubbles.

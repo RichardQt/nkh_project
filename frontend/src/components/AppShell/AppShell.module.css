@@ -79,25 +79,36 @@
   font-weight: 550 !important;
 }
 
-.navButton {
-  height: 40px !important;
-  justify-content: flex-start !important;
-  color: var(--text-secondary) !important;
+.navEntryButton {
+  height: 42px !important;
+  justify-content: center !important;
+  padding-inline: 14px !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
   border-radius: var(--radius-sm) !important;
+  background: var(--surface) !important;
+  box-shadow: none !important;
+  font-weight: 550 !important;
   transition:
     color 160ms var(--ease-out),
-    background-color 160ms var(--ease-out) !important;
+    background-color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out) !important;
 }
 
-.navButton:hover {
+.navEntryButton:hover {
   color: var(--text) !important;
+  border-color: var(--border-strong) !important;
   background: var(--surface-muted) !important;
 }
 
-.navButtonActive {
+.navEntryButton:active {
+  transform: translateY(1px);
+}
+
+.navEntryButtonActive {
   color: var(--primary) !important;
+  border-color: rgba(43, 92, 255, 0.22) !important;
   background: var(--primary-soft) !important;
-  font-weight: 550;
 }
 
 .sidebarDivider {

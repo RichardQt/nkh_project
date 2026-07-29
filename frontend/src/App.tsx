@@ -6,6 +6,9 @@ import AppShell from './components/AppShell/AppShell';
 import { isAgentKey } from './data/agents';
 
 const HomePage = lazy(() => import('./pages/HomePage/HomePage'));
+const AgentCenterPage = lazy(
+  () => import('./pages/AgentCenterPage/AgentCenterPage'),
+);
 const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
 
 function PageBoundary({ children }: { children: ReactNode }) {
@@ -58,8 +61,14 @@ export default function App() {
             </PageBoundary>
           }
         />
-        {/* 旧智能体中心入口重定向首页 */}
-        <Route path="agents" element={<Navigate to="/" replace />} />
+        <Route
+          path="agents"
+          element={
+            <PageBoundary>
+              <AgentCenterPage />
+            </PageBoundary>
+          }
+        />
         <Route path="chat" element={<GeneralChatRoute />} />
         <Route path="chat/:agentKey" element={<SceneChatRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
