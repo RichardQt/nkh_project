@@ -29,15 +29,17 @@ import type {
 import { Drawer, Empty, List, Typography } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
-import { getAgent } from '../../data/agents';
-import {
-  sceneIntroCopy,
-  scenePlaceholder,
-} from '../../data/sceneMocks';
+import { KnowledgeGraphModal } from '../../components/KnowledgeGraph/KnowledgeGraphModal';
 import {
   SceneResultPanel,
   SearchPreviewPanel,
 } from '../../components/SceneResults/SceneResults';
+import { getAgent } from '../../data/agents';
+import { resolveKgQuery } from '../../data/kgFieldMap';
+import {
+  sceneIntroCopy,
+  scenePlaceholder,
+} from '../../data/sceneMocks';
 import {
   GENERIC_STREAM_ERROR_MESSAGE,
   startChatStream,
@@ -45,7 +47,6 @@ import {
 } from '../../services/chatStream';
 import { startSceneMockStream } from '../../services/sceneMockStream';
 import type { AgentKey } from '../../types/agent';
-import { isSceneMockAgentKey } from '../../types/scene';
 import type {
   AnswerTurn,
   ChatMessage,
@@ -59,6 +60,8 @@ import type {
   ThoughtStepStatus,
   WorkflowNodeEvent,
 } from '../../types/chat';
+import type { KgQueryTarget } from '../../types/kg';
+import { isSceneMockAgentKey } from '../../types/scene';
 import styles from './ChatPage.module.css';
 
 interface ChatLocationState {
@@ -722,28 +725,62 @@ interface EntryDetailState {
   listFields: DisplayField[];
   detailFields: DisplayField[];
   item: RelatedEntryRow;
+  /** listKey / sectionKey used for knowledge-graph field mapping */
+  listKey?: string;
 }
 
 function FieldDefinitionList({
   fields,
   item,
   className,
+  listKey,
+  onOpenKg,
 }: {
   fields: DisplayField[];
   item: RelatedEntryRow;
   className?: string;
+  /** listKey / sectionKey for KG field mapping */
+  listKey?: string;
+  onOpenKg?: (target: KgQueryTarget) => void;
 }) {
   if (!fields.length) {
     return null;
   }
   return (
     <dl className={className ?? styles.entryFields}>
-      {fields.map((field) => (
-        <div key={field.key} className={styles.entryFieldRow}>
-          <dt>{field.label}</dt>
-          <dd>{formatCellValue(item[field.key])}</dd>
-        </div>
-      ))}
+      {fields.map((field) => {
+        const display = formatCellValue(item[field.key]);
+        const kg =
+          onOpenKg && listKey
+            ? resolveKgQuery(listKey, field.key, item)
+            : null;
+
+        return (
+          <div key={field.key} className={styles.entryFieldRow}>
+            <dt>{field.label}</dt>
+            <dd>
+              {kg && onOpenKg && display !== '-' ? (
+                <button
+                  type="button"
+                  className={styles.kgFieldLink}
+                  onClick={() =>
+                    onOpenKg({
+                      entityType: kg.entityType,
+                      vid: kg.vid,
+                      label: `${field.label}：${display}`,
+                    })
+                  }
+                  title="查看知识图谱"
+                >
+                  {display}
+                </button>
+              ) : (
+                display
+              )}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -753,11 +790,13 @@ function EntrySectionList({
   fields,
   items,
   onOpenDetail,
+  onOpenKg,
 }: {
   sectionKey: string;
   fields: DisplayField[];
   items: RelatedEntryRow[];
   onOpenDetail: (item: RelatedEntryRow, index: number) => void;
+  onOpenKg: (target: KgQueryTarget) => void;
 }) {
   const titleField = fields[0];
   const cardFields = fields.slice(1);
@@ -772,6 +811,10 @@ function EntrySectionList({
         const titleText = titleField
           ? formatCellValue(item[titleField.key])
           : `条目 ${index + 1}`;
+        const titleKg =
+          titleField && titleText !== '-'
+            ? resolveKgQuery(sectionKey, titleField.key, item)
+            : null;
 
         return (
           <List.Item
@@ -779,9 +822,28 @@ function EntrySectionList({
             className={styles.entryItem}
           >
             <div className={styles.entryHead}>
-              <Typography.Text strong className={styles.entryTitle}>
-                {titleText}
-              </Typography.Text>
+              {titleKg ? (
+                <button
+                  type="button"
+                  className={styles.kgTitleLink}
+                  onClick={() =>
+                    onOpenKg({
+                      entityType: titleKg.entityType,
+                      vid: titleKg.vid,
+                      label: titleField
+                        ? `${titleField.label}：${titleText}`
+                        : titleText,
+                    })
+                  }
+                  title="查看知识图谱"
+                >
+                  {titleText}
+                </button>
+              ) : (
+                <Typography.Text strong className={styles.entryTitle}>
+                  {titleText}
+                </Typography.Text>
+              )}
               <button
                 type="button"
                 className={styles.entryHint}
@@ -791,7 +853,12 @@ function EntrySectionList({
                 详情
               </button>
             </div>
-            <FieldDefinitionList fields={cardFields} item={item} />
+            <FieldDefinitionList
+              fields={cardFields}
+              item={item}
+              listKey={sectionKey}
+              onOpenKg={onOpenKg}
+            />
           </List.Item>
         );
       }}
@@ -807,6 +874,7 @@ function RelatedEntriesList({
   title?: string;
 }) {
   const [detail, setDetail] = useState<EntryDetailState | null>(null);
+  const [kgTarget, setKgTarget] = useState<KgQueryTarget | null>(null);
 
   const sections: RelatedEntriesSection[] =
     payload.sections && payload.sections.length > 0
@@ -847,17 +915,22 @@ function RelatedEntriesList({
       ? section.detailFields
       : (payload.detailFields ?? []);
     const titleField = listFields[0];
-    const title = titleField
+    const titleText = titleField
       ? formatCellValue(item[titleField.key])
       : `条目 ${index + 1}`;
 
     setDetail({
-      title,
+      title: titleText,
       sectionLabel: multiSection ? section.label : undefined,
       listFields,
       detailFields,
       item,
+      listKey: section.key,
     });
+  };
+
+  const openKg = (target: KgQueryTarget) => {
+    setKgTarget(target);
   };
 
   return (
@@ -889,6 +962,7 @@ function RelatedEntriesList({
               }
               items={section.items}
               onOpenDetail={(item, index) => openDetail(section, item, index)}
+              onOpenKg={openKg}
             />
           </section>
         ))}
@@ -924,6 +998,8 @@ function RelatedEntriesList({
                   fields={detail.listFields}
                   item={detail.item}
                   className={styles.detailFields}
+                  listKey={detail.listKey}
+                  onOpenKg={openKg}
                 />
               </div>
             ) : null}
@@ -937,6 +1013,8 @@ function RelatedEntriesList({
                   fields={detail.detailFields}
                   item={detail.item}
                   className={styles.detailFields}
+                  listKey={detail.listKey}
+                  onOpenKg={openKg}
                 />
               </div>
             ) : (
@@ -949,6 +1027,12 @@ function RelatedEntriesList({
           </div>
         ) : null}
       </Drawer>
+
+      <KnowledgeGraphModal
+        open={Boolean(kgTarget)}
+        target={kgTarget}
+        onClose={() => setKgTarget(null)}
+      />
     </div>
   );
 }

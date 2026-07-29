@@ -5,6 +5,10 @@ Flow:
            → Backend A projects config fields and proxies SSE
            → POST Backend B /api/chat/stream  JSON body: query/session_id/function
 
+  Frontend → POST /api/kg/query
+           → Backend A proxies to Backend B /api/kg/query
+           → body: entity_type / vid / hop / uuid
+
 SSE protocol:
   Backend B: intent_classify → followup_check → token* → final_answer
              → optional related_entries → EOF
@@ -38,11 +42,12 @@ if __package__ in (None, ""):
     if _root not in sys.path:
         sys.path.insert(0, _root)
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from app.config import BACKEND_B_BASE_URL, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
+from app.config import BACKEND_B_API_KEY, BACKEND_B_BASE_URL, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 from app.field_schema import (
     ACHIEVEMENT_FIELD_CATALOG,
     AGENT_FUNCTION_MAP,
@@ -77,6 +82,8 @@ _SSE_HEADERS = {
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
+
+_KG_QUERY_PATH = "/api/kg/query"
 
 
 @app.get("/api/health")
@@ -117,6 +124,79 @@ async def list_functions() -> dict[str, Any]:
             {"key": f.key, "label": f.label} for f in ACHIEVEMENT_FIELD_CATALOG
         ],
     }
+
+
+@app.post("/api/kg/query")
+async def kg_query(request: Request) -> Response:
+    """Proxy knowledge-graph query to Backend B.
+
+    Request body (frontend may send only entity_type + vid)::
+
+        {
+          "entity_type": "成果",
+          "vid": "自凝胶止血粉",
+          "hop": "1",
+          "uuid": ""
+        }
+
+    ``hop`` is always forced to ``"1"`` and ``uuid`` to ``""``.
+    """
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    entity_type = body.get("entity_type")
+    vid = body.get("vid")
+
+    if not isinstance(entity_type, str) or not entity_type.strip():
+        raise HTTPException(status_code=422, detail="entity_type 不能为空")
+    if not isinstance(vid, str) or not vid.strip():
+        raise HTTPException(status_code=422, detail="vid 不能为空")
+    if len(entity_type) > 128:
+        raise HTTPException(status_code=422, detail="entity_type 过长")
+    if len(vid) > 512:
+        raise HTTPException(status_code=422, detail="vid 过长")
+
+    payload = {
+        "entity_type": entity_type.strip(),
+        "vid": vid.strip(),
+        "hop": "1",
+        "uuid": "",
+    }
+
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if BACKEND_B_API_KEY:
+        headers["Authorization"] = f"Bearer {BACKEND_B_API_KEY}"
+
+    url = f"{BACKEND_B_BASE_URL.rstrip('/')}{_KG_QUERY_PATH}"
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+            upstream = await client.post(url, json=payload, headers=headers)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="知识图谱服务超时") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="知识图谱服务不可用") from exc
+
+    content_type = upstream.headers.get("content-type", "application/json")
+    # Prefer JSON passthrough so Chinese stays intact
+    try:
+        data = upstream.json()
+        return JSONResponse(content=data, status_code=upstream.status_code)
+    except (json.JSONDecodeError, ValueError):
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            media_type=content_type,
+        )
 
 
 @app.post("/api/chat/stream")
