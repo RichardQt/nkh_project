@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   AppstoreOutlined,
+  ArrowLeftOutlined,
   MenuOutlined,
-  PlusOutlined,
   RobotOutlined,
 } from '@ant-design/icons';
 import { Button, Divider, Drawer, Layout, Typography } from 'antd';
@@ -32,11 +32,12 @@ function SidebarPanel({
   onSelectConversation,
   onDeletedConversation,
 }: SidebarPanelProps) {
-  const newChatActive =
+  const inConversationDetail = Boolean(activeConversationId);
+  const assistantActive =
     (activePath === '/' ||
       activePath === '/chat' ||
       activePath.startsWith('/chat/')) &&
-    !activeConversationId;
+    !inConversationDetail;
   const agentsActive = activePath === '/agents';
 
   return (
@@ -57,17 +58,32 @@ function SidebarPanel({
       </Button>
 
       <nav className={styles.navigation} aria-label="主导航">
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="large"
-          block
-          ghost={!newChatActive}
-          className={styles.newChatButton}
-          onClick={() => onNavigate('/')}
-        >
-          新建对话
-        </Button>
+        {inConversationDetail ? (
+          <Button
+            type="primary"
+            icon={<ArrowLeftOutlined />}
+            size="large"
+            block
+            className={styles.newChatButton}
+            onClick={() => onNavigate('/')}
+            aria-label="返回智能助手"
+          >
+            返回
+          </Button>
+        ) : (
+          <Button
+            type="primary"
+            icon={<RobotOutlined />}
+            size="large"
+            block
+            ghost={!assistantActive}
+            className={styles.newChatButton}
+            onClick={() => onNavigate('/')}
+            aria-current={assistantActive ? 'page' : undefined}
+          >
+            智能助手
+          </Button>
+        )}
 
         <Button
           type="default"
