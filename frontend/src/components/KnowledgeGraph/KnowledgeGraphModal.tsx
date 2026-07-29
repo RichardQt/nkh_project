@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Spin, Typography, Empty } from 'antd';
+import { Button, Modal, Spin, Typography, Empty } from 'antd';
+import { ArrowLeftOutlined } from '@ant-design/icons';
 import { queryKnowledgeGraph, KgQueryError } from '../../services/kgQuery';
 import type { KgGraphData, KgNode, KgQueryTarget } from '../../types/kg';
+import { isSameKgTarget, resolveKgNodeQuery } from '../../types/kg';
 import { ForceGraph } from './ForceGraph';
 import styles from './KnowledgeGraph.module.css';
 
@@ -23,6 +25,10 @@ function formatPropValue(
   return String(value);
 }
 
+function targetKey(t: KgQueryTarget): string {
+  return `${t.entityType}::${t.vid}`;
+}
+
 export function KnowledgeGraphModal({
   open,
   target,
@@ -33,8 +39,39 @@ export function KnowledgeGraphModal({
   const [data, setData] = useState<KgGraphData | null>(null);
   const [selected, setSelected] = useState<KgNode | null>(null);
 
+  /** Currently queried subgraph root (may differ from initial open target). */
+  const [activeTarget, setActiveTarget] = useState<KgQueryTarget | null>(null);
+  /** Stack of previous targets for breadcrumb back navigation. */
+  const [history, setHistory] = useState<KgQueryTarget[]>([]);
+
+  // Reset navigation when modal opens with a new entry target.
   useEffect(() => {
     if (!open || !target) {
+      return;
+    }
+    setActiveTarget(target);
+    setHistory([]);
+    setData(null);
+    setSelected(null);
+    setError(null);
+  }, [open, target]);
+
+  // Clear state when closed so the next open starts clean.
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    setActiveTarget(null);
+    setHistory([]);
+    setData(null);
+    setSelected(null);
+    setError(null);
+    setLoading(false);
+  }, [open]);
+
+  // Fetch subgraph whenever activeTarget changes.
+  useEffect(() => {
+    if (!open || !activeTarget) {
       return;
     }
 
@@ -44,11 +81,19 @@ export function KnowledgeGraphModal({
     setData(null);
     setSelected(null);
 
-    queryKnowledgeGraph(target.entityType, target.vid, controller.signal)
+    queryKnowledgeGraph(
+      activeTarget.entityType,
+      activeTarget.vid,
+      controller.signal,
+    )
       .then((graph) => {
         setData(graph);
         const center =
           graph.nodes.find((n) => n.id === graph.center_node_id) ??
+          graph.nodes.find(
+            (n) =>
+              n.id === activeTarget.vid || n.name === activeTarget.vid,
+          ) ??
           graph.nodes[0] ??
           null;
         setSelected(center);
@@ -72,11 +117,72 @@ export function KnowledgeGraphModal({
       });
 
     return () => controller.abort();
-  }, [open, target]);
+  }, [open, activeTarget]);
+
+  const drillToTarget = useCallback(
+    (next: KgQueryTarget) => {
+      if (!next.entityType || !next.vid) {
+        return;
+      }
+      if (isSameKgTarget(next, activeTarget)) {
+        return;
+      }
+      setHistory((prev) => {
+        if (!activeTarget) {
+          return prev;
+        }
+        // Avoid consecutive duplicates if user re-clicks during load.
+        const last = prev[prev.length - 1];
+        if (last && isSameKgTarget(last, activeTarget)) {
+          return prev;
+        }
+        return [...prev, activeTarget];
+      });
+      setActiveTarget(next);
+    },
+    [activeTarget],
+  );
 
   const onSelectNode = useCallback((node: KgNode) => {
     setSelected(node);
   }, []);
+
+  const onDrillNode = useCallback(
+    (node: KgNode) => {
+      const next = resolveKgNodeQuery(node);
+      if (!next) {
+        return;
+      }
+      drillToTarget(next);
+    },
+    [drillToTarget],
+  );
+
+  const goBack = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+      const nextHistory = prev.slice(0, -1);
+      const previous = prev[prev.length - 1];
+      setActiveTarget(previous);
+      return nextHistory;
+    });
+  }, []);
+
+  const jumpToHistoryIndex = useCallback(
+    (index: number) => {
+      setHistory((prev) => {
+        if (index < 0 || index >= prev.length) {
+          return prev;
+        }
+        const destination = prev[index];
+        setActiveTarget(destination);
+        return prev.slice(0, index);
+      });
+    },
+    [],
+  );
 
   const properties = useMemo(() => {
     const props = selected?.detail?.properties;
@@ -88,8 +194,28 @@ export function KnowledgeGraphModal({
       .map(([k, v]) => [k, formatPropValue(v)] as [string, string]);
   }, [selected]);
 
-  const title = target
-    ? `知识图谱 · ${target.label || target.vid}`
+  const selectedDrillTarget = useMemo(() => {
+    if (!selected) {
+      return null;
+    }
+    return resolveKgNodeQuery(selected);
+  }, [selected]);
+
+  const canDrillSelected = Boolean(
+    selectedDrillTarget &&
+      !isSameKgTarget(selectedDrillTarget, activeTarget) &&
+      selected?.id !== data?.center_node_id,
+  );
+
+  const trail = useMemo(() => {
+    if (!activeTarget) {
+      return [] as KgQueryTarget[];
+    }
+    return [...history, activeTarget];
+  }, [history, activeTarget]);
+
+  const title = activeTarget
+    ? `知识图谱 · ${activeTarget.label || activeTarget.vid}`
     : '知识图谱';
 
   return (
@@ -103,11 +229,11 @@ export function KnowledgeGraphModal({
       title={
         <div className={styles.modalTitle}>
           <span className={styles.modalTitleMain}>{title}</span>
-          {target ? (
+          {activeTarget ? (
             <span className={styles.modalTitleMeta}>
-              {target.entityType}
+              {activeTarget.entityType}
               <span className={styles.dot}>·</span>
-              {target.vid}
+              {activeTarget.vid}
             </span>
           ) : null}
         </div>
@@ -116,6 +242,56 @@ export function KnowledgeGraphModal({
         body: { paddingTop: 8 },
       }}
     >
+      {trail.length > 1 || history.length > 0 ? (
+        <div className={styles.navBar} aria-label="子图导航">
+          <Button
+            type="text"
+            size="small"
+            icon={<ArrowLeftOutlined />}
+            disabled={history.length === 0 || loading}
+            onClick={goBack}
+            className={styles.backBtn}
+          >
+            返回
+          </Button>
+          <div className={styles.breadcrumb} role="navigation">
+            {trail.map((item, index) => {
+              const isLast = index === trail.length - 1;
+              const isHistory = index < history.length;
+              return (
+                <span key={`${targetKey(item)}-${index}`} className={styles.crumbWrap}>
+                  {index > 0 ? (
+                    <span className={styles.crumbSep} aria-hidden>
+                      /
+                    </span>
+                  ) : null}
+                  {isLast || !isHistory ? (
+                    <span
+                      className={
+                        isLast ? styles.crumbCurrent : styles.crumbText
+                      }
+                      title={`${item.entityType} · ${item.vid}`}
+                    >
+                      {item.label || item.vid}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.crumbLink}
+                      title={`${item.entityType} · ${item.vid}`}
+                      disabled={loading}
+                      onClick={() => jumpToHistoryIndex(index)}
+                    >
+                      {item.label || item.vid}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className={styles.loadingBox}>
           <Spin size="large" tip="正在加载知识图谱…" />
@@ -125,7 +301,16 @@ export function KnowledgeGraphModal({
       {!loading && error ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={error}
+          description={
+            <div className={styles.errorBlock}>
+              <div>{error}</div>
+              {history.length > 0 ? (
+                <Button size="small" onClick={goBack} style={{ marginTop: 12 }}>
+                  返回上一层
+                </Button>
+              ) : null}
+            </div>
+          }
           className={styles.emptyBox}
         />
       ) : null}
@@ -161,11 +346,12 @@ export function KnowledgeGraphModal({
                 centerNodeId={data.center_node_id}
                 selectedNodeId={selected?.id}
                 onSelectNode={onSelectNode}
+                onDrillNode={onDrillNode}
               />
             )}
 
             <Typography.Text className={styles.graphHint}>
-              滚轮缩放 · 拖拽画布平移 · 点击节点查看详情
+              点击子节点进入其子图 · 滚轮缩放 · 拖拽平移
               {data.summary?.node_count != null
                 ? ` · ${data.summary.node_count} 节点`
                 : ''}
@@ -188,6 +374,20 @@ export function KnowledgeGraphModal({
                   <Typography.Paragraph className={styles.detailDesc}>
                     {selected.description}
                   </Typography.Paragraph>
+                ) : null}
+
+                {canDrillSelected && selectedDrillTarget ? (
+                  <Button
+                    type="primary"
+                    size="small"
+                    className={styles.drillBtn}
+                    onClick={() => drillToTarget(selectedDrillTarget)}
+                  >
+                    进入子图
+                    <span className={styles.drillBtnMeta}>
+                      {selectedDrillTarget.entityType}
+                    </span>
+                  </Button>
                 ) : null}
 
                 {properties.length > 0 ? (

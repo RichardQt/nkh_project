@@ -124,6 +124,10 @@ function buildExpertPayload(): RelatedEntriesPayload {
 /** 政策推荐 · 深度思考 */
 export const POLICY_RECOMMEND_THINKING = `根据企业信息对照省级与市级政策库：先筛「完全满足」条件的省基础研究计划等专项，再补充「部分满足」的省市联合资助与市级补贴/成果转化类政策；按省级政策、市级政策分层输出列表字段，并保留详情页可展开信息。`;
 
+/** 政策推荐 · 推荐理由（结果区底部、推荐问题上方） */
+export const POLICY_RECOMMEND_REASON =
+  '综合企业公开信息与政策申报条件对照：企业在基础研究与前沿技术方向具备稳定研发投入和团队基础，与「省基础研究重点项目」申报导向高度吻合，故列为完全满足；同时在房租补贴、校企联合攻关、成果转化等市级政策上已具备主体资格或部分条件，但材料完备度或联合申报协议尚需补齐，故归入部分满足。建议优先推进省级完全匹配项目的申报准备，同步补齐市级政策申报要件，以提高整体获批概率。';
+
 const PROVINCIAL_PROJECT_DESC =
   '面向我省经济社会发展紧迫需求，围绕重大科技前沿或产业前瞻问题超前部署，从行业和产业发展实践中凝练科学问题，开展目标导向的应用基础研究，从源头和底层解决基础科学问题，努力实现前瞻性基础研究、引领性原创成果的重大突破。';
 
@@ -299,6 +303,7 @@ export function buildPolicyRecommendResult(question: string): PolicyRecommendRes
         },
       ],
     },
+    recommendReason: POLICY_RECOMMEND_REASON,
   };
 }
 

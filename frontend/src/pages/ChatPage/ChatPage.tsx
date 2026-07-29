@@ -2578,7 +2578,12 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                 [
                   formatGroup('完全满足政策', scene.fullyMatched),
                   formatGroup('部分满足政策', scene.partiallyMatched),
-                ].join('\n\n'),
+                  scene.recommendReason?.trim()
+                    ? `推荐理由\n${scene.recommendReason}`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join('\n\n'),
               );
             } else if (scene.kind === 'achievement_eval') {
               copyParts.push(

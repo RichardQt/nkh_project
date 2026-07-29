@@ -8,7 +8,13 @@ interface ForceGraphProps {
   categories: KgCategory[];
   centerNodeId?: string;
   selectedNodeId?: string | null;
+  /** Fired on clean click (no drag). */
   onSelectNode: (node: KgNode) => void;
+  /**
+   * Fired on clean click of a non-center node — used for subgraph drill-down.
+   * Center-node clicks only select for detail.
+   */
+  onDrillNode?: (node: KgNode) => void;
 }
 
 interface SimNode {
@@ -57,6 +63,8 @@ function colorFor(
  * Lightweight force-directed canvas graph (no third-party graph runtime).
  * Supports pan, zoom, drag, and node click for detail.
  */
+const CLICK_MOVE_THRESHOLD = 6;
+
 export function ForceGraph({
   nodes,
   links,
@@ -64,13 +72,18 @@ export function ForceGraph({
   centerNodeId,
   selectedNodeId,
   onSelectNode,
+  onDrillNode,
 }: ForceGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<string | null | undefined>(selectedNodeId);
   const onSelectRef = useRef(onSelectNode);
+  const onDrillRef = useRef(onDrillNode);
+  const centerIdRef = useRef(centerNodeId);
   selectedRef.current = selectedNodeId;
   onSelectRef.current = onSelectNode;
+  onDrillRef.current = onDrillNode;
+  centerIdRef.current = centerNodeId;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -142,6 +155,10 @@ export function ForceGraph({
       dragging: null as SimNode | null,
       panning: false,
       lastPointer: null as { x: number; y: number } | null,
+      /** Pointer-down origin for click-vs-drag detection. */
+      pointerOrigin: null as { x: number; y: number } | null,
+      pointerMoved: false,
+      hitOnDown: null as SimNode | null,
       raf: 0,
       width,
       height,
@@ -340,9 +357,11 @@ export function ForceGraph({
       const sy = event.clientY - rect.top;
       const hit = hitTest(sx, sy);
       state.lastPointer = { x: sx, y: sy };
+      state.pointerOrigin = { x: sx, y: sy };
+      state.pointerMoved = false;
+      state.hitOnDown = hit;
       if (hit) {
         state.dragging = hit;
-        onSelectRef.current(hit.raw);
         canvas.setPointerCapture(event.pointerId);
       } else {
         state.panning = true;
@@ -362,7 +381,17 @@ export function ForceGraph({
       const dy = sy - state.lastPointer.y;
       state.lastPointer = { x: sx, y: sy };
 
-      if (state.dragging) {
+      if (state.pointerOrigin) {
+        const total = Math.hypot(
+          sx - state.pointerOrigin.x,
+          sy - state.pointerOrigin.y,
+        );
+        if (total > CLICK_MOVE_THRESHOLD) {
+          state.pointerMoved = true;
+        }
+      }
+
+      if (state.dragging && state.pointerMoved) {
         const world = screenToWorld(sx, sy);
         state.dragging.x = world.x;
         state.dragging.y = world.y;
@@ -375,13 +404,32 @@ export function ForceGraph({
     };
 
     const onPointerUp = (event: PointerEvent) => {
+      const hit = state.hitOnDown;
+      const wasClick = Boolean(hit) && !state.pointerMoved;
       state.dragging = null;
       state.panning = false;
       state.lastPointer = null;
+      state.pointerOrigin = null;
+      state.hitOnDown = null;
       try {
         canvas.releasePointerCapture(event.pointerId);
       } catch {
         // ignore
+      }
+
+      if (!wasClick || !hit) {
+        state.pointerMoved = false;
+        return;
+      }
+      state.pointerMoved = false;
+
+      // Always select for detail pane.
+      onSelectRef.current(hit.raw);
+
+      // Drill into subgraph for non-center nodes.
+      const centerId = centerIdRef.current || state.simNodes[0]?.id;
+      if (hit.id !== centerId && onDrillRef.current) {
+        onDrillRef.current(hit.raw);
       }
     };
 

@@ -63,6 +63,8 @@ export interface PolicyRecommendResult {
   inputSummary: string;
   fullyMatched: PolicyMatchGroup;
   partiallyMatched: PolicyMatchGroup;
+  /** Standalone recommend reason shown below policy lists, above suggested questions. */
+  recommendReason: string;
 }
 
 /** One scoring dimension (创新性 / 成熟度 / 市场前景 / 可行性). */

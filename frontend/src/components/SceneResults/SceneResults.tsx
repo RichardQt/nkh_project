@@ -318,6 +318,19 @@ function PolicyRecommendPanel({ result }: { result: PolicyRecommendResult }) {
         onOpenMunicipal={(item) => openMunicipal(item, '市级政策')}
       />
 
+      {result.recommendReason?.trim() ? (
+        <section className={styles.section} aria-label="推荐理由">
+          <div className={styles.recommendReasonCard}>
+            <Typography.Text className={styles.summaryLayerLabel}>
+              推荐理由
+            </Typography.Text>
+            <Typography.Paragraph className={styles.summaryText}>
+              {result.recommendReason}
+            </Typography.Paragraph>
+          </div>
+        </section>
+      ) : null}
+
       <Drawer
         title={
           <div className={styles.policyDetailTitle}>

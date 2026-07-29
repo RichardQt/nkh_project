@@ -71,3 +71,30 @@ export interface KgQueryTarget {
   /** Optional label for modal title (field label + display text). */
   label?: string;
 }
+
+/**
+ * Map a graph node to a KG query target for subgraph drill-down.
+ * `entity_type` ← node.category；`vid` ← node.id（回退 name）。
+ */
+export function resolveKgNodeQuery(node: KgNode): KgQueryTarget | null {
+  const entityType = (node.category || '').trim();
+  const vid = (node.id || node.name || '').trim();
+  if (!entityType || !vid) {
+    return null;
+  }
+  return {
+    entityType,
+    vid,
+    label: (node.name || vid).trim(),
+  };
+}
+
+export function isSameKgTarget(
+  a: KgQueryTarget | null | undefined,
+  b: KgQueryTarget | null | undefined,
+): boolean {
+  if (!a || !b) {
+    return false;
+  }
+  return a.entityType === b.entityType && a.vid === b.vid;
+}
