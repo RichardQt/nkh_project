@@ -154,7 +154,7 @@ def _payload_list_candidates(payload: dict[str, Any]) -> list[Any]:
     return candidates
 
 
-def _has_related_items(function: str, payload: dict[str, Any]) -> bool:
+def _has_related_items(function: str | None, payload: dict[str, Any]) -> bool:
     """True when payload contains at least one list of row objects.
 
     Platforms return multi-key maps like::
@@ -187,7 +187,7 @@ def _has_related_items(function: str, payload: dict[str, Any]) -> bool:
     return any(_is_row_list(candidate) for candidate in _payload_list_candidates(payload))
 
 
-def _unwrap_related_payload(parsed: dict[str, Any], function: str) -> dict[str, Any]:
+def _unwrap_related_payload(parsed: dict[str, Any], function: str | None) -> dict[str, Any]:
     """Prefer the nested object that actually holds list rows."""
 
     if _has_related_items(function, parsed):
@@ -240,7 +240,7 @@ async def stream_from_backend_b(
     *,
     query: str,
     session_id: str,
-    function: str,
+    function: str | None,
     request: Request,
 ) -> AsyncIterator[str]:
     """Proxy Backend B SSE (POST JSON body), projecting related_entries fields.
@@ -251,6 +251,8 @@ async def stream_from_backend_b(
         Content-Type: application/json
         Accept: text/event-stream
         {"query": "...", "session_id": "1", "function": "achievements"}
+
+    When no scene is selected, ``function`` is omitted (empty).
     """
 
     fields = selected_fields(function)
@@ -259,7 +261,7 @@ async def stream_from_backend_b(
         "meta",
         {
             "sessionId": session_id,
-            "function": function,
+            "function": function or "",
             "fields": fields,
             "detailFields": detail_fields,
             "upstream": BACKEND_B_BASE_URL,
@@ -267,11 +269,13 @@ async def stream_from_backend_b(
     )
 
     url = _build_upstream_url()
-    body = {
+    body: dict[str, Any] = {
         "query": query,
         "session_id": session_id,
-        "function": function,
     }
+    # 未选中场景不传 function，避免上游按默认 achievements 处理
+    if function:
+        body["function"] = function
     headers: dict[str, str] = {
         "Accept": "text/event-stream",
         "Content-Type": "application/json",
@@ -444,7 +448,7 @@ async def _handle_upstream_event(
     event_name: str,
     raw_data: str,
     *,
-    function: str,
+    function: str | None,
 ) -> AsyncIterator[str]:
     """Map one upstream SSE event to zero or more downstream frames."""
 

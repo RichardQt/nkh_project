@@ -141,6 +141,31 @@ function formatCellValue(value: RelatedEntryRow[string]): string {
   return String(value);
 }
 
+/** Parse row.score for list-side relevance badge; null when absent / invalid. */
+function parseRelevanceScore(value: RelatedEntryRow[string]): number | null {
+  if (value == null || value === '') {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const n = Number(value.trim());
+    if (Number.isFinite(n)) {
+      return n;
+    }
+  }
+  return null;
+}
+
+function formatRelevanceScore(score: number): string {
+  if (Number.isInteger(score)) {
+    return String(score);
+  }
+  const rounded = Math.round(score * 100) / 100;
+  return String(rounded);
+}
+
 const INTENT_LABELS: Record<string, string> = {
   achievements: '找成果',
   requirements: '找需求',
@@ -855,8 +880,10 @@ function EntrySectionList({
   onOpenDetail: (item: RelatedEntryRow, index: number) => void;
   onOpenKg: (target: KgQueryTarget) => void;
 }) {
-  const titleField = fields[0];
-  const cardFields = fields.slice(1);
+  const titleField = fields[0]?.key === 'score' ? fields[1] : fields[0];
+  // score renders as a right-side badge, never as a definition-list row
+  const cardFields = fields
+    .filter((f) => f.key !== 'score' && f.key !== titleField?.key);
 
   return (
     <List
@@ -872,6 +899,7 @@ function EntrySectionList({
           titleField && titleText !== '-'
             ? resolveKgQueries(sectionKey, titleField.key, item)
             : [];
+        const relevanceScore = parseRelevanceScore(item.score);
 
         return (
           <List.Item
@@ -892,14 +920,25 @@ function EntrySectionList({
                   {titleText}
                 </Typography.Text>
               )}
-              <button
-                type="button"
-                className={styles.entryHint}
-                onClick={() => onOpenDetail(item, index)}
-                aria-label={`查看详情：${titleText}`}
-              >
-                详情
-              </button>
+              <div className={styles.entryHeadMeta}>
+                {relevanceScore != null ? (
+                  <span
+                    className={styles.entryScore}
+                    title={`关联度 ${formatRelevanceScore(relevanceScore)}`}
+                    aria-label={`关联度 ${formatRelevanceScore(relevanceScore)}`}
+                  >
+                    {formatRelevanceScore(relevanceScore)}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.entryHint}
+                  onClick={() => onOpenDetail(item, index)}
+                  aria-label={`查看详情：${titleText}`}
+                >
+                  详情
+                </button>
+              </div>
             </div>
             <FieldDefinitionList
               fields={cardFields}

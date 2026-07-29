@@ -39,7 +39,7 @@ export const KG_FIELD_MAP: Record<string, Record<string, KgFieldBinding>> = {
       entityType: '技术领域(二级)',
       vidFrom: 'primary_technology_field',
     },
-    organization_name: { entityType: '机构', vidFrom: 'self' },
+    affiliated_organization: { entityType: '机构', vidFrom: 'self' },
   },
   demands: {
     requirement_name: { entityType: '需求', vidFrom: 'self' },
@@ -51,7 +51,7 @@ export const KG_FIELD_MAP: Record<string, Record<string, KgFieldBinding>> = {
       entityType: '技术领域(二级)',
       vidFrom: 'primary_technology_field',
     },
-    organization_name: { entityType: '机构', vidFrom: 'self' },
+    affiliated_organization: { entityType: '机构', vidFrom: 'self' },
   },
 
   // 专家发现

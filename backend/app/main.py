@@ -268,14 +268,12 @@ async def stream_chat(request: Request) -> StreamingResponse:
     else:
         agent_key = body.get("agentKey")
         function = resolve_function(agent_key if isinstance(agent_key, str) else None)
-        if not function:
-            if agent_key in (None, "", "general"):
-                function = "achievements"
-            else:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"未知场景 agentKey={agent_key!r}，无法映射 function",
-                )
+        # 未选中场景：function 为空，不默认 achievements
+        if not function and agent_key not in (None, "", "general"):
+            raise HTTPException(
+                status_code=422,
+                detail=f"未知场景 agentKey={agent_key!r}，无法映射 function",
+            )
 
     return StreamingResponse(
         stream_from_backend_b(

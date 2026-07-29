@@ -93,7 +93,8 @@ DEMAND_LIST_FIELDS: tuple[FieldDef, ...] = (
     FieldDef("primary_technology_field", "技术领域一级"),
     FieldDef("secondary_technology_field", "技术领域二级"),
     FieldDef("nanjing_key_industry_field", "南京重点发展产业领域"),
-    FieldDef("organization_name", "单位名称"),
+    FieldDef("affiliated_organization", "所属单位"),
+    FieldDef("region", "所属地区"),
     FieldDef("intended_investment_10k_cny", "意向投入金额"),
 )
 DEMAND_DETAIL_FIELDS: tuple[FieldDef, ...] = (
@@ -430,6 +431,10 @@ def selected_detail_fields(function: str | None) -> list[dict[str, str]]:
     return _fields_to_dicts(detail_fields)
 
 
+# Always keep relevance score on each row (not a list-card / detail field).
+_ROW_PASSTHROUGH_KEYS: tuple[str, ...] = ("score",)
+
+
 def _project_rows(
     raw_items: list[Any],
     field_keys: list[str],
@@ -439,7 +444,11 @@ def _project_rows(
         if not isinstance(row, dict):
             continue
         if field_keys:
-            items.append({k: row.get(k, "") for k in field_keys})
+            projected = {k: row.get(k, "") for k in field_keys}
+            for key in _ROW_PASSTHROUGH_KEYS:
+                if key in row and key not in projected:
+                    projected[key] = row[key]
+            items.append(projected)
         else:
             items.append(dict(row))
     return items
