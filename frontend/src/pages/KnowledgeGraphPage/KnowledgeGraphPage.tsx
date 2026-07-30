@@ -16,6 +16,15 @@ const ENTITY_TYPE_OPTIONS = Array.from(
   ),
 ).sort((a, b) => a.localeCompare(b, 'zh-CN'));
 
+const DEFAULT_ENTITY_TYPE = '技术领域(一级)';
+const DEFAULT_VID = '新材料';
+
+const DEFAULT_TARGET: KgQueryTarget = {
+  entityType: DEFAULT_ENTITY_TYPE,
+  vid: DEFAULT_VID,
+  label: DEFAULT_VID,
+};
+
 interface QueryFormValues {
   entity_type: string;
   vid: string;
@@ -23,7 +32,7 @@ interface QueryFormValues {
 
 export default function KnowledgeGraphPage() {
   const [form] = Form.useForm<QueryFormValues>();
-  const [target, setTarget] = useState<KgQueryTarget | null>(null);
+  const [target, setTarget] = useState<KgQueryTarget | null>(DEFAULT_TARGET);
   const [queryKey, setQueryKey] = useState(0);
   const reduceMotion = useReducedMotion();
 
@@ -88,7 +97,10 @@ export default function KnowledgeGraphPage() {
             requiredMark={false}
             onFinish={onFinish}
             className={styles.form}
-            initialValues={{ entity_type: '', vid: '' }}
+            initialValues={{
+              entity_type: DEFAULT_ENTITY_TYPE,
+              vid: DEFAULT_VID,
+            }}
           >
             <div className={styles.formGrid}>
               <Form.Item
