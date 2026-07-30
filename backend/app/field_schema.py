@@ -372,6 +372,60 @@ def _is_object_list(value: Any) -> bool:
     return isinstance(value, list) and any(isinstance(item, dict) for item in value)
 
 
+def _list_has_serial_no(value: Any) -> bool:
+    """True when value is a non-empty object list and any row has ``serial_no``."""
+
+    if not isinstance(value, list) or not value:
+        return False
+    for item in value:
+        if isinstance(item, dict) and "serial_no" in item:
+            return True
+    return False
+
+
+def _find_serial_no_list(payload: dict[str, Any]) -> tuple[str, list[Any]] | None:
+    """Locate the first row list that carries ``serial_no`` (any domain key)."""
+
+    meta_keys = {
+        "fields",
+        "detailFields",
+        "sections",
+        "categories",
+        "listKey",
+        "intent",
+        "function",
+    }
+    preferred = (
+        "items",
+        "achievements",
+        "expert_team",
+        "experts",
+        "requirements",
+        "demands",
+        "enterprises",
+        "policies",
+        "platforms",
+        "entries",
+        "list",
+        *platform_section_keys(),
+    )
+    seen: set[str] = set()
+    for key in preferred:
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        candidate = payload.get(key)
+        if _list_has_serial_no(candidate):
+            return key, candidate  # type: ignore[return-value]
+
+    for key, value in payload.items():
+        if key in meta_keys or key in seen:
+            continue
+        if _list_has_serial_no(value):
+            return str(key), value  # type: ignore[return-value]
+    return None
+
+
 def _function_from_category(raw: Any) -> str | None:
     """Map intent/categories token to a known function schema key."""
 
@@ -703,46 +757,49 @@ def _project_platform_sections(payload: dict[str, Any]) -> dict[str, Any]:
 def _project_generic_related_entries(payload: dict[str, Any]) -> dict[str, Any]:
     """Best-effort projection when no function schema can be resolved.
 
-    Pulls the first non-empty row list into ``items`` so the frontend never
-    receives an authoritative empty ``items: []`` while domain keys still hold
-    data (the general-chat / no-agentKey path).
+    Prefers any list whose rows include ``serial_no`` (upstream marker for
+    related entries). Falls back to the first non-empty object list.
     """
 
-    preferred_keys = (
-        "achievements",
-        "expert_team",
-        "experts",
-        "requirements",
-        "demands",
-        "enterprises",
-        "policies",
-        "platforms",
-        "items",
-        "entries",
-        "list",
-        *platform_section_keys(),
-    )
-    resolved_key = "items"
-    raw_items: list[Any] = []
-    seen: set[str] = set()
-    for key in preferred_keys:
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        candidate = payload.get(key)
-        if _is_object_list(candidate):
-            resolved_key = key
-            raw_items = candidate  # type: ignore[assignment]
-            break
-
-    if not raw_items:
-        for key, value in payload.items():
-            if key in seen:
+    found = _find_serial_no_list(payload)
+    if found:
+        resolved_key, raw_items = found
+    else:
+        preferred_keys = (
+            "achievements",
+            "expert_team",
+            "experts",
+            "requirements",
+            "demands",
+            "enterprises",
+            "policies",
+            "platforms",
+            "items",
+            "entries",
+            "list",
+            *platform_section_keys(),
+        )
+        resolved_key = "items"
+        raw_items: list[Any] = []
+        seen: set[str] = set()
+        for key in preferred_keys:
+            if not key or key in seen:
                 continue
-            if _is_object_list(value):
-                resolved_key = str(key)
-                raw_items = value  # type: ignore[assignment]
+            seen.add(key)
+            candidate = payload.get(key)
+            if _is_object_list(candidate):
+                resolved_key = key
+                raw_items = candidate  # type: ignore[assignment]
                 break
+
+        if not raw_items:
+            for key, value in payload.items():
+                if key in seen:
+                    continue
+                if _is_object_list(value):
+                    resolved_key = str(key)
+                    raw_items = value  # type: ignore[assignment]
+                    break
 
     # Keep full rows; no schema means no field filtering / labels.
     items = [dict(row) for row in raw_items if isinstance(row, dict)]
@@ -780,6 +837,21 @@ def project_related_entries(
     if not resolved_function or resolved_function not in _FUNCTION_SCHEMA:
         resolved_function = infer_function_from_payload(payload)
 
+    # serial_no marks related rows under any key (items empty or domain key)
+    serial_hit = _find_serial_no_list(payload)
+    if serial_hit and (
+        not resolved_function or resolved_function not in _FUNCTION_SCHEMA
+    ):
+        # Try sniffing function from the serial_no list itself
+        serial_key, serial_rows = serial_hit
+        sample = next((row for row in serial_rows if isinstance(row, dict)), None)
+        if sample:
+            sniffed = _function_from_row_keys(set(sample.keys()))
+            if sniffed:
+                resolved_function = sniffed
+            elif not resolved_function:
+                resolved_function = _function_from_category(serial_key)
+
     if resolved_function == "platforms":
         return _project_platform_sections(payload)
 
@@ -804,6 +876,11 @@ def project_related_entries(
         resolved_function, ("items", "entries", "list")
     )
     resolved_key, raw_items = _extract_list(payload, list_key, aliases)
+
+    # If schema extract missed but serial_no list exists, use that list
+    if not raw_items and serial_hit:
+        resolved_key, raw_items = serial_hit
+
     items = _project_rows(raw_items, unique_keys)
 
     return {

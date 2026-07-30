@@ -252,6 +252,43 @@ function formatCellValue(value: RelatedEntryRow[string]): string {
   return String(value);
 }
 
+const ENTRY_TITLE_KEYS = [
+  'requirement_name',
+  'achievement_name',
+  'expert_team_name',
+  'company_name',
+  'enterprise_name',
+  'policy_name',
+  'policy_title',
+  'platform_name',
+  'center_name',
+  'equipment_name',
+  'name',
+  'title',
+] as const;
+
+/** Prefer schema title field; fall back to common name keys on the row. */
+function resolveEntryTitle(
+  item: RelatedEntryRow,
+  fields: DisplayField[],
+  index: number,
+): string {
+  const titleField = fields[0]?.key === 'score' ? fields[1] : fields[0];
+  if (titleField) {
+    const text = formatCellValue(item[titleField.key]);
+    if (text !== '-') {
+      return text;
+    }
+  }
+  for (const key of ENTRY_TITLE_KEYS) {
+    const text = formatCellValue(item[key]);
+    if (text !== '-') {
+      return text;
+    }
+  }
+  return `条目 ${index + 1}`;
+}
+
 /** Parse row.score for list-side relevance badge; null when absent / invalid. */
 function parseRelevanceScore(value: RelatedEntryRow[string]): number | null {
   if (value == null || value === '') {
@@ -1073,12 +1110,14 @@ function EntrySectionList({
       dataSource={items}
       split
       renderItem={(item, index) => {
-        const titleText = titleField
-          ? formatCellValue(item[titleField.key])
-          : `条目 ${index + 1}`;
+        const titleText = resolveEntryTitle(item, fields, index);
+        const titleKey =
+          titleField && formatCellValue(item[titleField.key]) !== '-'
+            ? titleField.key
+            : ENTRY_TITLE_KEYS.find((key) => formatCellValue(item[key]) !== '-');
         const titleKgTargets =
-          titleField && titleText !== '-'
-            ? resolveKgQueries(sectionKey, titleField.key, item)
+          titleKey && titleText !== '-'
+            ? resolveKgQueries(sectionKey, titleKey, item)
             : [];
         const relevanceScore = parseRelevanceScore(item.score);
 
@@ -1088,9 +1127,9 @@ function EntrySectionList({
             className={styles.entryItem}
           >
             <div className={styles.entryHead}>
-              {titleKgTargets.length > 0 && titleField ? (
+              {titleKgTargets.length > 0 && titleKey ? (
                 <KgValueLinks
-                  fieldLabel={titleField.label}
+                  fieldLabel={titleField?.label ?? '名称'}
                   display={titleText}
                   targets={titleKgTargets}
                   className={styles.kgTitleLink}
@@ -1182,10 +1221,7 @@ function RelatedEntriesList({
     const detailFields = section.detailFields.length
       ? section.detailFields
       : (payload.detailFields ?? []);
-    const titleField = listFields[0];
-    const titleText = titleField
-      ? formatCellValue(item[titleField.key])
-      : `条目 ${index + 1}`;
+    const titleText = resolveEntryTitle(item, listFields, index);
 
     setDetail({
       title: titleText,

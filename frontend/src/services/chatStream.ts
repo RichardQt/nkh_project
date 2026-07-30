@@ -104,6 +104,7 @@ const DOMAIN_LIST_FIELDS: Record<string, DisplayField[]> = {
     { key: 'primary_technology_field', label: '技术领域一级' },
     { key: 'secondary_technology_field', label: '技术领域二级' },
     { key: 'affiliated_university', label: '所属高校' },
+    { key: 'publisher', label: '发布人' },
     { key: 'score', label: '关联度' },
   ],
   experts: [
@@ -113,6 +114,7 @@ const DOMAIN_LIST_FIELDS: Record<string, DisplayField[]> = {
     { key: 'primary_technology_field', label: '技术领域一级' },
     { key: 'secondary_technology_field', label: '技术领域二级' },
     { key: 'affiliated_university', label: '所属高校' },
+    { key: 'publisher', label: '发布人' },
     { key: 'score', label: '关联度' },
   ],
   requirements: [
@@ -278,22 +280,60 @@ function synthesizeFieldsFromRows(items: RelatedEntryRow[]): DisplayField[] {
   return ordered;
 }
 
+/** Normalize domain / list keys from upstream categories or aliases. */
+function normalizeDomainKey(raw: string): string {
+  const token = raw.trim().toLowerCase();
+  if (!token) {
+    return raw;
+  }
+  const aliases: Record<string, string> = {
+    achievement: 'achievements',
+    achievements: 'achievements',
+    expert: 'expert_team',
+    experts: 'expert_team',
+    expert_team: 'expert_team',
+    demand: 'requirements',
+    demands: 'requirements',
+    requirement: 'requirements',
+    requirements: 'requirements',
+    enterprise: 'enterprises',
+    enterprises: 'enterprises',
+    policy: 'policies',
+    policies: 'policies',
+    platform: 'platforms',
+    platforms: 'platforms',
+  };
+  return aliases[token] ?? token;
+}
+
+function categoryHints(categories?: unknown): string[] {
+  if (!Array.isArray(categories)) {
+    return [];
+  }
+  return categories
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => normalizeDomainKey(value));
+}
+
 function resolveDomainKey(
   listKey: string,
   items: RelatedEntryRow[],
   categories?: unknown,
 ): string {
-  if (listKey && listKey !== 'items' && listKey !== 'entries' && listKey !== 'list') {
-    return listKey;
+  const fromList =
+    listKey && listKey !== 'items' && listKey !== 'entries' && listKey !== 'list'
+      ? normalizeDomainKey(listKey)
+      : '';
+  if (fromList && (DOMAIN_LIST_FIELDS[fromList] || fromList !== listKey)) {
+    return fromList;
   }
-  if (Array.isArray(categories)) {
-    const cat = categories.find(
-      (value): value is string => typeof value === 'string' && value.trim().length > 0,
-    );
-    if (cat) {
-      return cat.trim();
+
+  for (const cat of categoryHints(categories)) {
+    if (DOMAIN_LIST_FIELDS[cat] || DOMAIN_DETAIL_FIELDS[cat]) {
+      return cat;
     }
   }
+
   const present = presentKeys(items);
   if (present.has('requirement_name') || present.has('requirement_type')) {
     return 'requirements';
@@ -301,7 +341,11 @@ function resolveDomainKey(
   if (present.has('achievement_name')) {
     return 'achievements';
   }
-  if (present.has('expert_team_name') || present.has('team_leader')) {
+  if (
+    present.has('expert_team_name') ||
+    present.has('team_leader') ||
+    present.has('expertise_areas')
+  ) {
     return 'expert_team';
   }
   if (present.has('company_name') || present.has('enterprise_name')) {
@@ -317,7 +361,7 @@ function resolveDomainKey(
   ) {
     return 'platforms';
   }
-  return listKey || 'items';
+  return fromList || listKey || 'items';
 }
 
 function ensureDisplayFields(
@@ -344,6 +388,10 @@ function ensureDisplayFields(
     nextFields = catalog
       ? filterFieldsByPresent(catalog, present)
       : synthesizeFieldsFromRows(items);
+    // Catalog miss or row shape drift: still show something usable
+    if (!nextFields.length) {
+      nextFields = synthesizeFieldsFromRows(items);
+    }
   }
 
   let nextDetail = detailFields;
@@ -351,8 +399,8 @@ function ensureDisplayFields(
     const catalog = DOMAIN_DETAIL_FIELDS[domainKey];
     if (catalog) {
       nextDetail = filterFieldsByPresent(catalog, present);
-    } else {
-      // Remaining non-list keys as detail fallback
+    }
+    if (!nextDetail.length) {
       const listKeys = new Set(nextFields.map((field) => field.key));
       nextDetail = [...present]
         .filter((key) => !listKeys.has(key) && !HIDDEN_SYNTH_KEYS.has(key))
@@ -621,9 +669,35 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
       };
     }
 
-    // Prefer non-empty lists. Empty `items: []` must not block domain aliases
-    // (general chat / no agentKey may still ship achievements/expert_team/…).
-    const relatedListAliases = [
+    // Row marker: any object list that has `serial_no` is the related list.
+    // Works with or without projected `items` (empty shell + domain key).
+    const META_KEYS = new Set([
+      'fields',
+      'detailFields',
+      'sections',
+      'categories',
+      'listKey',
+    ]);
+
+    const isObjectRowList = (value: unknown): value is unknown[] =>
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.some((row) => row != null && typeof row === 'object' && !Array.isArray(row));
+
+    const listHasSerialNo = (value: unknown): boolean =>
+      isObjectRowList(value) &&
+      value.some(
+        (row) =>
+          row != null &&
+          typeof row === 'object' &&
+          !Array.isArray(row) &&
+          Object.prototype.hasOwnProperty.call(row, 'serial_no'),
+      );
+
+    const preferredOrder = [
+      ...categoryHints(record.categories),
+      listKey,
+      'items',
       'achievements',
       'requirements',
       'expert_team',
@@ -636,38 +710,62 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
       'pilot_test_platforms',
       'large_equipment',
       'public_service_platforms',
-      // legacy singular keys
       'poc_center',
       'pilot_test_platform',
       'large_scale_equipment',
       'public_service_platform',
       'entries',
       'list',
-    ] as const;
+    ].filter((key, index, arr) => key && arr.indexOf(key) === index);
 
     let resolvedListKey = listKey;
     let rawItems: unknown[] | null = null;
 
-    if (Array.isArray(record.items) && record.items.length > 0) {
-      rawItems = record.items;
-    } else if (
-      listKey !== 'items' &&
-      Array.isArray(record[listKey]) &&
-      (record[listKey] as unknown[]).length > 0
-    ) {
-      rawItems = record[listKey] as unknown[];
-    } else {
-      const alias = relatedListAliases.find(
-        (key) => Array.isArray(record[key]) && (record[key] as unknown[]).length > 0,
-      );
-      if (alias) {
-        resolvedListKey = alias;
-        rawItems = record[alias] as unknown[];
+    // 1) Prefer any list whose rows carry serial_no
+    for (const key of preferredOrder) {
+      if (listHasSerialNo(record[key])) {
+        resolvedListKey = normalizeDomainKey(key);
+        rawItems = record[key] as unknown[];
+        break;
+      }
+    }
+    if (!rawItems) {
+      for (const [key, value] of Object.entries(record)) {
+        if (META_KEYS.has(key)) {
+          continue;
+        }
+        if (listHasSerialNo(value)) {
+          resolvedListKey = normalizeDomainKey(key);
+          rawItems = value;
+          break;
+        }
       }
     }
 
-    // All candidates empty (or missing): keep an empty array if present so
-    // callers still receive a valid payload instead of null.
+    // 2) Fallback: non-empty object lists (no serial_no yet)
+    if (!rawItems) {
+      for (const key of preferredOrder) {
+        if (isObjectRowList(record[key])) {
+          resolvedListKey = normalizeDomainKey(key);
+          rawItems = record[key] as unknown[];
+          break;
+        }
+      }
+    }
+    if (!rawItems) {
+      for (const [key, value] of Object.entries(record)) {
+        if (META_KEYS.has(key)) {
+          continue;
+        }
+        if (isObjectRowList(value)) {
+          resolvedListKey = normalizeDomainKey(key);
+          rawItems = value;
+          break;
+        }
+      }
+    }
+
+    // 3) Keep empty array shell if nothing else found
     if (!rawItems) {
       if (Array.isArray(record.items)) {
         rawItems = record.items;
