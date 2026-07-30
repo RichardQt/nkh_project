@@ -368,6 +368,142 @@ def resolve_function(agent_key: str | None) -> str | None:
     return AGENT_FUNCTION_MAP.get(agent_key)
 
 
+def _is_object_list(value: Any) -> bool:
+    return isinstance(value, list) and any(isinstance(item, dict) for item in value)
+
+
+def _function_from_category(raw: Any) -> str | None:
+    """Map intent/categories token to a known function schema key."""
+
+    if not isinstance(raw, str):
+        return None
+    token = raw.strip().lower()
+    if not token:
+        return None
+    aliases = {
+        "achievements": "achievements",
+        "achievement": "achievements",
+        "expert_team": "expert_team",
+        "experts": "expert_team",
+        "expert": "expert_team",
+        "requirements": "requirements",
+        "requirement": "requirements",
+        "demands": "requirements",
+        "demand": "requirements",
+        "enterprises": "enterprises",
+        "enterprise": "enterprises",
+        "policies": "policies",
+        "policy": "policies",
+        "platforms": "platforms",
+        "platform": "platforms",
+    }
+    mapped = aliases.get(token)
+    if mapped and mapped in _FUNCTION_SCHEMA:
+        return mapped
+    if token in _FUNCTION_SCHEMA:
+        return token
+    return None
+
+
+def _function_from_row_keys(keys: set[str]) -> str | None:
+    if keys & {
+        "achievement_name",
+        "achievement_id",
+        "technology_maturity",
+    }:
+        return "achievements"
+    if keys & {"expert_team_name", "team_leader", "expertise_areas"}:
+        return "expert_team"
+    if keys & {
+        "requirement_name",
+        "demand_name",
+        "requirement_id",
+        "requirement_type",
+        "intended_investment_10k_cny",
+    }:
+        return "requirements"
+    if keys & {"enterprise_name", "enterprise_id", "company_name"}:
+        return "enterprises"
+    if keys & {"policy_name", "policy_title", "policy_id"}:
+        return "policies"
+    if keys & {
+        "platform_name",
+        "poc_center_name",
+        "equipment_name",
+        "center_name",
+    }:
+        return "platforms"
+    return None
+
+
+def infer_function_from_payload(payload: dict[str, Any]) -> str | None:
+    """Guess schema function from related_entries keys when agentKey is absent.
+
+    Order prefers domain-specific keys over generic ``items``/``entries``/``list``.
+    Also accepts ``categories`` / ``intent`` from upstream intent_classify.
+    Multi-section platform maps resolve to ``platforms``.
+    """
+
+    # Multi-section platform payload (no single platforms[] array required)
+    platform_keys = set(platform_section_keys())
+    if any(_is_object_list(payload.get(key)) for key in platform_keys):
+        return "platforms"
+
+    # Domain list keys / aliases → function (first hit wins)
+    probe_order: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("achievements", ("achievements",)),
+        ("expert_team", ("expert_team", "experts")),
+        ("requirements", ("requirements", "demands")),
+        ("enterprises", ("enterprises",)),
+        ("policies", ("policies",)),
+        ("platforms", ("platforms",)),
+    )
+    for function, keys in probe_order:
+        for key in keys:
+            if _is_object_list(payload.get(key)):
+                return function
+
+    # intent_classify may attach categories / intent without a listKey
+    for cat in payload.get("categories") or ():
+        mapped = _function_from_category(cat)
+        if mapped:
+            return mapped
+    mapped_intent = _function_from_category(payload.get("intent"))
+    if mapped_intent:
+        return mapped_intent
+    mapped_function = _function_from_category(payload.get("function"))
+    if mapped_function:
+        return mapped_function
+
+    # Generic / domain lists: sniff row shape via known primary name fields
+    for probe_key in (
+        "items",
+        "entries",
+        "list",
+        "achievements",
+        "expert_team",
+        "experts",
+        "requirements",
+        "demands",
+        "enterprises",
+        "policies",
+        "platforms",
+    ):
+        rows = payload.get(probe_key)
+        if not _is_object_list(rows):
+            continue
+        sample = next((row for row in rows if isinstance(row, dict)), None)
+        if not sample:
+            continue
+        sniffed = _function_from_row_keys(set(sample.keys()))
+        if sniffed:
+            return sniffed
+        if probe_key in ("items", "entries", "list"):
+            return None
+
+    return None
+
+
 def _catalog_map(catalog: tuple[FieldDef, ...]) -> dict[str, str]:
     return {item.key: item.label for item in catalog}
 
@@ -564,6 +700,62 @@ def _project_platform_sections(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _project_generic_related_entries(payload: dict[str, Any]) -> dict[str, Any]:
+    """Best-effort projection when no function schema can be resolved.
+
+    Pulls the first non-empty row list into ``items`` so the frontend never
+    receives an authoritative empty ``items: []`` while domain keys still hold
+    data (the general-chat / no-agentKey path).
+    """
+
+    preferred_keys = (
+        "achievements",
+        "expert_team",
+        "experts",
+        "requirements",
+        "demands",
+        "enterprises",
+        "policies",
+        "platforms",
+        "items",
+        "entries",
+        "list",
+        *platform_section_keys(),
+    )
+    resolved_key = "items"
+    raw_items: list[Any] = []
+    seen: set[str] = set()
+    for key in preferred_keys:
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        candidate = payload.get(key)
+        if _is_object_list(candidate):
+            resolved_key = key
+            raw_items = candidate  # type: ignore[assignment]
+            break
+
+    if not raw_items:
+        for key, value in payload.items():
+            if key in seen:
+                continue
+            if _is_object_list(value):
+                resolved_key = str(key)
+                raw_items = value  # type: ignore[assignment]
+                break
+
+    # Keep full rows; no schema means no field filtering / labels.
+    items = [dict(row) for row in raw_items if isinstance(row, dict)]
+    return {
+        "listKey": resolved_key,
+        "fields": [],
+        "detailFields": [],
+        "items": items,
+        "sections": [],
+        resolved_key: items,
+    }
+
+
 def project_related_entries(
     function: str | None,
     payload: dict[str, Any],
@@ -579,23 +771,23 @@ def project_related_entries(
           "items": [{... list + detail keys ...}],
           "sections": [...]  # only for multi-type platforms (may be empty)
         }
+
+    When ``function`` is missing (general chat / no agentKey), infers schema from
+    payload keys so domain lists still project into ``items`` + field metadata.
     """
 
-    if function == "platforms":
+    resolved_function = function
+    if not resolved_function or resolved_function not in _FUNCTION_SCHEMA:
+        resolved_function = infer_function_from_payload(payload)
+
+    if resolved_function == "platforms":
         return _project_platform_sections(payload)
 
-    if not function or function not in _FUNCTION_SCHEMA:
-        return {
-            "listKey": "items",
-            "fields": [],
-            "detailFields": [],
-            "items": [],
-            "sections": [],
-            **payload,
-        }
+    if not resolved_function or resolved_function not in _FUNCTION_SCHEMA:
+        return _project_generic_related_entries(payload)
 
     list_key, list_fields, detail_fields, raw_override, defaults = _FUNCTION_SCHEMA[
-        function
+        resolved_function
     ]
     list_dicts = _select_list_fields(list_fields, raw_override, defaults)
     detail_dicts = _fields_to_dicts(detail_fields)
@@ -608,7 +800,9 @@ def project_related_entries(
             seen_keys.add(k)
             unique_keys.append(k)
 
-    aliases = _FUNCTION_LIST_ALIASES.get(function, ("items", "entries", "list"))
+    aliases = _FUNCTION_LIST_ALIASES.get(
+        resolved_function, ("items", "entries", "list")
+    )
     resolved_key, raw_items = _extract_list(payload, list_key, aliases)
     items = _project_rows(raw_items, unique_keys)
 

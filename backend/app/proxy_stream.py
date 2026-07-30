@@ -543,15 +543,15 @@ async def _handle_upstream_event(
 
         working = _unwrap_related_payload(parsed, function)
 
-        # Platforms always attempt projection, even if key names are new.
+        # Always attempt projection when row lists exist (incl. function=None).
         if function == "platforms" or _has_related_items(function, working):
             projected = project_related_entries(function, working)
             # If projection found nothing but raw has row lists, forward raw
             # under a generic shell so the UI can still render.
-            if (
-                function == "platforms"
-                and not projected.get("sections")
-                and not projected.get("items")
+            projected_items = projected.get("items")
+            projected_sections = projected.get("sections")
+            if (not projected_sections) and (
+                not isinstance(projected_items, list) or not projected_items
             ):
                 recovered_sections: list[dict[str, Any]] = []
                 for key, value in working.items():
@@ -567,17 +567,29 @@ async def _handle_upstream_event(
                         }
                     )
                 if recovered_sections:
-                    projected = {
-                        "listKey": "platforms",
-                        "fields": [],
-                        "detailFields": [],
-                        "items": [
-                            item
-                            for section in recovered_sections
-                            for item in section["items"]
-                        ],
-                        "sections": recovered_sections,
-                    }
+                    # Multi-key platform-style maps keep sections; single list flattens.
+                    if len(recovered_sections) > 1 or function == "platforms":
+                        projected = {
+                            "listKey": "platforms" if function == "platforms" else "items",
+                            "fields": [],
+                            "detailFields": [],
+                            "items": [
+                                item
+                                for section in recovered_sections
+                                for item in section["items"]
+                            ],
+                            "sections": recovered_sections,
+                        }
+                    else:
+                        only = recovered_sections[0]
+                        projected = {
+                            "listKey": only["key"],
+                            "fields": [],
+                            "detailFields": [],
+                            "items": only["items"],
+                            "sections": [],
+                            only["key"]: only["items"],
+                        }
             yield sse("related_entries", projected)
             return
 

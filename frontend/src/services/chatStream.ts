@@ -87,6 +87,286 @@ function parseFields(raw: unknown): DisplayField[] {
   return fields;
 }
 
+/** Known list/detail field labels when upstream omits fields metadata. */
+const DOMAIN_LIST_FIELDS: Record<string, DisplayField[]> = {
+  achievements: [
+    { key: 'achievement_name', label: '成果名称' },
+    { key: 'primary_technology_field', label: '技术领域一级' },
+    { key: 'secondary_technology_field', label: '技术领域二级' },
+    { key: 'technology_maturity', label: '技术成熟度' },
+    { key: 'affiliated_university', label: '所属高校' },
+    { key: 'score', label: '关联度' },
+  ],
+  expert_team: [
+    { key: 'expert_team_name', label: '专家团队名称' },
+    { key: 'team_leader', label: '团队负责人' },
+    { key: 'expertise_areas', label: '擅长方向' },
+    { key: 'primary_technology_field', label: '技术领域一级' },
+    { key: 'secondary_technology_field', label: '技术领域二级' },
+    { key: 'affiliated_university', label: '所属高校' },
+    { key: 'score', label: '关联度' },
+  ],
+  experts: [
+    { key: 'expert_team_name', label: '专家团队名称' },
+    { key: 'team_leader', label: '团队负责人' },
+    { key: 'expertise_areas', label: '擅长方向' },
+    { key: 'primary_technology_field', label: '技术领域一级' },
+    { key: 'secondary_technology_field', label: '技术领域二级' },
+    { key: 'affiliated_university', label: '所属高校' },
+    { key: 'score', label: '关联度' },
+  ],
+  requirements: [
+    { key: 'requirement_name', label: '需求名称' },
+    { key: 'requirement_type', label: '需求类型' },
+    { key: 'cooperation_method', label: '合作方式' },
+    { key: 'deadline', label: '截止日期' },
+    { key: 'primary_technology_field', label: '技术领域一级' },
+    { key: 'secondary_technology_field', label: '技术领域二级' },
+    { key: 'affiliated_organization', label: '所属单位' },
+    { key: 'region', label: '所属地区' },
+    { key: 'intended_investment_10k_cny', label: '意向投入金额' },
+    { key: 'score', label: '关联度' },
+  ],
+  demands: [
+    { key: 'requirement_name', label: '需求名称' },
+    { key: 'requirement_type', label: '需求类型' },
+    { key: 'cooperation_method', label: '合作方式' },
+    { key: 'deadline', label: '截止日期' },
+    { key: 'primary_technology_field', label: '技术领域一级' },
+    { key: 'secondary_technology_field', label: '技术领域二级' },
+    { key: 'affiliated_organization', label: '所属单位' },
+    { key: 'region', label: '所属地区' },
+    { key: 'intended_investment_10k_cny', label: '意向投入金额' },
+    { key: 'score', label: '关联度' },
+  ],
+  enterprises: [
+    { key: 'company_name', label: '企业名称' },
+    { key: 'industry_field', label: '产业领域' },
+    { key: 'evaluation_grade', label: '评价等级' },
+    { key: 'registered_capital', label: '注册资本' },
+    { key: 'district', label: '所属区' },
+    { key: 'score', label: '关联度' },
+  ],
+  policies: [
+    { key: 'policy_name', label: '政策名称' },
+    { key: 'policy_title', label: '政策标题' },
+    { key: 'issuing_authority', label: '发布机关' },
+    { key: 'publish_date', label: '发布日期' },
+    { key: 'score', label: '关联度' },
+  ],
+  platforms: [
+    { key: 'platform_name', label: '平台名称' },
+    { key: 'center_name', label: '名称' },
+    { key: 'equipment_name', label: '仪器设备名称' },
+    { key: 'score', label: '关联度' },
+  ],
+};
+
+const DOMAIN_DETAIL_FIELDS: Record<string, DisplayField[]> = {
+  achievements: [
+    { key: 'achievement_introduction', label: '成果简介' },
+    { key: 'application_field', label: '应用领域' },
+    { key: 'intellectual_property', label: '知识产权' },
+    { key: 'contact_name', label: '联系人' },
+    { key: 'contact_info', label: '联系方式' },
+  ],
+  expert_team: [
+    { key: 'team_size', label: '团队人数' },
+    { key: 'team_introduction', label: '团队介绍' },
+    { key: 'representative_achievements', label: '代表性成果' },
+  ],
+  experts: [
+    { key: 'team_size', label: '团队人数' },
+    { key: 'team_introduction', label: '团队介绍' },
+    { key: 'representative_achievements', label: '代表性成果' },
+  ],
+  requirements: [
+    { key: 'requirement_description', label: '需求描述' },
+    { key: 'existing_foundation', label: '现有基础' },
+    { key: 'contact_name', label: '联系人' },
+    { key: 'contact_info', label: '联系方式' },
+    { key: 'rd_lead_name', label: '研发负责人' },
+    { key: 'rd_lead_phone', label: '研发负责人电话' },
+  ],
+  demands: [
+    { key: 'requirement_description', label: '需求描述' },
+    { key: 'existing_foundation', label: '现有基础' },
+    { key: 'contact_name', label: '联系人' },
+    { key: 'contact_info', label: '联系方式' },
+    { key: 'rd_lead_name', label: '研发负责人' },
+    { key: 'rd_lead_phone', label: '研发负责人电话' },
+  ],
+  enterprises: [
+    { key: 'company_introduction', label: '企业介绍' },
+    { key: 'business_scope', label: '经营范围' },
+    { key: 'legal_representative', label: '法定代表人' },
+    { key: 'contact_info', label: '联系方式' },
+  ],
+  policies: [
+    { key: 'policy_summary', label: '政策摘要' },
+    { key: 'policy_content', label: '政策内容' },
+  ],
+  platforms: [
+    { key: 'platform_introduction', label: '平台介绍' },
+    { key: 'service_content', label: '服务内容' },
+    { key: 'contact_name', label: '联系人' },
+    { key: 'contact_phone', label: '联系电话' },
+  ],
+};
+
+const TITLE_FIELD_KEYS = [
+  'requirement_name',
+  'achievement_name',
+  'expert_team_name',
+  'company_name',
+  'enterprise_name',
+  'policy_name',
+  'policy_title',
+  'platform_name',
+  'center_name',
+  'equipment_name',
+  'name',
+  'title',
+] as const;
+
+const HIDDEN_SYNTH_KEYS = new Set([
+  'score',
+  'serial_no',
+  'id',
+  'uuid',
+  'vid',
+  '_id',
+]);
+
+function presentKeys(items: RelatedEntryRow[]): Set<string> {
+  const keys = new Set<string>();
+  for (const item of items) {
+    for (const key of Object.keys(item)) {
+      keys.add(key);
+    }
+  }
+  return keys;
+}
+
+function filterFieldsByPresent(
+  catalog: DisplayField[],
+  present: Set<string>,
+): DisplayField[] {
+  return catalog.filter((field) => present.has(field.key));
+}
+
+function synthesizeFieldsFromRows(items: RelatedEntryRow[]): DisplayField[] {
+  const present = presentKeys(items);
+  const ordered: DisplayField[] = [];
+  for (const key of TITLE_FIELD_KEYS) {
+    if (present.has(key)) {
+      ordered.push({ key, label: key });
+    }
+  }
+  for (const key of present) {
+    if (HIDDEN_SYNTH_KEYS.has(key)) {
+      continue;
+    }
+    if (ordered.some((field) => field.key === key)) {
+      continue;
+    }
+    ordered.push({ key, label: key });
+  }
+  if (present.has('score')) {
+    ordered.unshift({ key: 'score', label: '关联度' });
+  }
+  return ordered;
+}
+
+function resolveDomainKey(
+  listKey: string,
+  items: RelatedEntryRow[],
+  categories?: unknown,
+): string {
+  if (listKey && listKey !== 'items' && listKey !== 'entries' && listKey !== 'list') {
+    return listKey;
+  }
+  if (Array.isArray(categories)) {
+    const cat = categories.find(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    );
+    if (cat) {
+      return cat.trim();
+    }
+  }
+  const present = presentKeys(items);
+  if (present.has('requirement_name') || present.has('requirement_type')) {
+    return 'requirements';
+  }
+  if (present.has('achievement_name')) {
+    return 'achievements';
+  }
+  if (present.has('expert_team_name') || present.has('team_leader')) {
+    return 'expert_team';
+  }
+  if (present.has('company_name') || present.has('enterprise_name')) {
+    return 'enterprises';
+  }
+  if (present.has('policy_name') || present.has('policy_title')) {
+    return 'policies';
+  }
+  if (
+    present.has('platform_name') ||
+    present.has('center_name') ||
+    present.has('equipment_name')
+  ) {
+    return 'platforms';
+  }
+  return listKey || 'items';
+}
+
+function ensureDisplayFields(
+  listKey: string,
+  items: RelatedEntryRow[],
+  fields: DisplayField[],
+  detailFields: DisplayField[],
+  categories?: unknown,
+): {
+  listKey: string;
+  fields: DisplayField[];
+  detailFields: DisplayField[];
+} {
+  if (!items.length) {
+    return { listKey, fields, detailFields };
+  }
+
+  const domainKey = resolveDomainKey(listKey, items, categories);
+  const present = presentKeys(items);
+
+  let nextFields = fields;
+  if (!nextFields.length) {
+    const catalog = DOMAIN_LIST_FIELDS[domainKey];
+    nextFields = catalog
+      ? filterFieldsByPresent(catalog, present)
+      : synthesizeFieldsFromRows(items);
+  }
+
+  let nextDetail = detailFields;
+  if (!nextDetail.length) {
+    const catalog = DOMAIN_DETAIL_FIELDS[domainKey];
+    if (catalog) {
+      nextDetail = filterFieldsByPresent(catalog, present);
+    } else {
+      // Remaining non-list keys as detail fallback
+      const listKeys = new Set(nextFields.map((field) => field.key));
+      nextDetail = [...present]
+        .filter((key) => !listKeys.has(key) && !HIDDEN_SYNTH_KEYS.has(key))
+        .map((key) => ({ key, label: key }));
+    }
+  }
+
+  return {
+    listKey: domainKey || listKey,
+    fields: nextFields,
+    detailFields: nextDetail,
+  };
+}
+
 function parseWorkflowNodeEvent(data: string): WorkflowNodeEvent | null {
   try {
     const record = asRecord(JSON.parse(data) as unknown);
@@ -271,10 +551,11 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
       if (!items.length) {
         return null;
       }
+      const ensured = ensureDisplayFields('items', items, [], [], undefined);
       return {
-        listKey: 'items',
-        fields: [],
-        detailFields: [],
+        listKey: ensured.listKey,
+        fields: ensured.fields,
+        detailFields: ensured.detailFields,
         items,
         sections: undefined,
       };
@@ -300,44 +581,98 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
         parseEntryRows(record.items).length > 0
           ? parseEntryRows(record.items)
           : sections.flatMap((s) => s.items);
-      return {
+      const baseFields = fields.length ? fields : sections[0]?.fields ?? [];
+      const baseDetail =
+        detailFields.length > 0
+          ? detailFields
+          : sections[0]?.detailFields ?? [];
+      const ensured = ensureDisplayFields(
         listKey,
-        fields: fields.length ? fields : sections[0]?.fields ?? [],
-        detailFields:
-          detailFields.length > 0
-            ? detailFields
-            : sections[0]?.detailFields ?? [],
         items,
-        sections,
+        baseFields,
+        baseDetail,
+        record.categories,
+      );
+      const nextSections = sections.map((section) => {
+        if (section.fields.length && section.detailFields.length) {
+          return section;
+        }
+        const sectionEnsured = ensureDisplayFields(
+          section.key,
+          section.items,
+          section.fields.length ? section.fields : ensured.fields,
+          section.detailFields.length
+            ? section.detailFields
+            : ensured.detailFields,
+          record.categories,
+        );
+        return {
+          ...section,
+          fields: sectionEnsured.fields,
+          detailFields: sectionEnsured.detailFields,
+        };
+      });
+      return {
+        listKey: ensured.listKey,
+        fields: ensured.fields,
+        detailFields: ensured.detailFields,
+        items,
+        sections: nextSections,
       };
     }
 
+    // Prefer non-empty lists. Empty `items: []` must not block domain aliases
+    // (general chat / no agentKey may still ship achievements/expert_team/…).
+    const relatedListAliases = [
+      'achievements',
+      'requirements',
+      'expert_team',
+      'experts',
+      'demands',
+      'enterprises',
+      'platforms',
+      'policies',
+      'proof_of_concept_centers',
+      'pilot_test_platforms',
+      'large_equipment',
+      'public_service_platforms',
+      // legacy singular keys
+      'poc_center',
+      'pilot_test_platform',
+      'large_scale_equipment',
+      'public_service_platform',
+      'entries',
+      'list',
+    ] as const;
+
+    let resolvedListKey = listKey;
     let rawItems: unknown[] | null = null;
-    if (Array.isArray(record.items)) {
+
+    if (Array.isArray(record.items) && record.items.length > 0) {
       rawItems = record.items;
-    } else if (Array.isArray(record[listKey])) {
+    } else if (
+      listKey !== 'items' &&
+      Array.isArray(record[listKey]) &&
+      (record[listKey] as unknown[]).length > 0
+    ) {
       rawItems = record[listKey] as unknown[];
     } else {
-      const alias = [
-        'achievements',
-        'requirements',
-        'expert_team',
-        'experts',
-        'demands',
-        'enterprises',
-        'platforms',
-        'proof_of_concept_centers',
-        'pilot_test_platforms',
-        'large_equipment',
-        'public_service_platforms',
-        // legacy singular keys
-        'poc_center',
-        'pilot_test_platform',
-        'large_scale_equipment',
-        'public_service_platform',
-      ].find((key) => Array.isArray(record[key]));
+      const alias = relatedListAliases.find(
+        (key) => Array.isArray(record[key]) && (record[key] as unknown[]).length > 0,
+      );
       if (alias) {
+        resolvedListKey = alias;
         rawItems = record[alias] as unknown[];
+      }
+    }
+
+    // All candidates empty (or missing): keep an empty array if present so
+    // callers still receive a valid payload instead of null.
+    if (!rawItems) {
+      if (Array.isArray(record.items)) {
+        rawItems = record.items;
+      } else if (Array.isArray(record[listKey])) {
+        rawItems = record[listKey] as unknown[];
       }
     }
 
@@ -376,22 +711,53 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
         .filter((s): s is NonNullable<typeof s> => s !== null);
 
       if (inferred.length) {
-        return {
-          listKey: 'platforms',
+        const flatItems = inferred.flatMap((s) => s.items);
+        const ensured = ensureDisplayFields(
+          'platforms',
+          flatItems,
           fields,
           detailFields,
-          items: inferred.flatMap((s) => s.items),
-          sections: inferred,
+          record.categories,
+        );
+        return {
+          listKey: 'platforms',
+          fields: ensured.fields,
+          detailFields: ensured.detailFields,
+          items: flatItems,
+          sections: inferred.map((section) => {
+            if (section.fields.length) {
+              return section;
+            }
+            const sectionEnsured = ensureDisplayFields(
+              section.key,
+              section.items,
+              [],
+              [],
+              record.categories,
+            );
+            return {
+              ...section,
+              fields: sectionEnsured.fields,
+              detailFields: sectionEnsured.detailFields,
+            };
+          }),
         };
       }
       return null;
     }
 
     const items = parseEntryRows(rawItems);
-    return {
-      listKey,
+    const ensured = ensureDisplayFields(
+      resolvedListKey,
+      items,
       fields,
       detailFields,
+      record.categories,
+    );
+    return {
+      listKey: ensured.listKey,
+      fields: ensured.fields,
+      detailFields: ensured.detailFields,
       items,
       sections: undefined,
     };
