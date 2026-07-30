@@ -108,16 +108,22 @@ export const KG_FIELD_MAP: Record<string, Record<string, KgFieldBinding>> = {
     service_field: { entityType: '服务领域', vidFrom: 'self' },
   },
 
-  // 平台发现 · 公共服务平台
+  // 平台发现 · 公共服务平台（兼容 plain / *_required 两种上游字段）
   public_service_platforms: {
     platform_name_required: { entityType: '公共服务平台', vidFrom: 'self' },
+    platform_name: { entityType: '公共服务平台', vidFrom: 'self' },
     responsible_organization_required: { entityType: '机构', vidFrom: 'self' },
+    responsible_organization: { entityType: '机构', vidFrom: 'self' },
     industry_field_required: { entityType: '产业领域', vidFrom: 'self' },
+    industry_field: { entityType: '产业领域', vidFrom: 'self' },
   },
   public_service_platform: {
     platform_name_required: { entityType: '公共服务平台', vidFrom: 'self' },
+    platform_name: { entityType: '公共服务平台', vidFrom: 'self' },
     responsible_organization_required: { entityType: '机构', vidFrom: 'self' },
+    responsible_organization: { entityType: '机构', vidFrom: 'self' },
     industry_field_required: { entityType: '产业领域', vidFrom: 'self' },
+    industry_field: { entityType: '产业领域', vidFrom: 'self' },
   },
 };
 

@@ -18,9 +18,10 @@ services:
       PYTHONPATH: /workspace/backend
     volumes:
       - ./backend/.env:/workspace/backend/.env:ro
-      - backend-data:/workspace/backend/data
-      # 热点 Excel（仓库根目录 英文字段.xlsx）。没有该文件就保持注释，否则 compose 会因挂载源不存在失败。
-      # - ./英文字段.xlsx:/workspace/英文字段.xlsx:ro
+      # SQLite 落在项目根 data/（与 docker-compose.yml 同级），替换/修改后重启 backend 即生效
+      - ./data:/workspace/backend/data
+      # 热点 Excel：容器内路径对应 hotspot_store 的 /workspace/英文字段.xlsx
+      - ./英文字段.xlsx:/workspace/英文字段.xlsx:ro
     healthcheck:
       test:
         [
@@ -45,6 +46,3 @@ services:
       - "${WEB_PORT:-80}:80"
     depends_on:
       - backend
-
-volumes:
-  backend-data:

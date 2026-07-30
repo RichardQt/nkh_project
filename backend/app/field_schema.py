@@ -482,6 +482,7 @@ def _function_from_row_keys(keys: set[str]) -> str | None:
         return "policies"
     if keys & {
         "platform_name",
+        "platform_name_required",
         "poc_center_name",
         "equipment_name",
         "center_name",
@@ -622,7 +623,30 @@ def selected_detail_fields(function: str | None) -> list[dict[str, str]]:
 
 
 # Always keep relevance score on each row (not a list-card / detail field).
-_ROW_PASSTHROUGH_KEYS: tuple[str, ...] = ("score",)
+_ROW_PASSTHROUGH_KEYS: tuple[str, ...] = ("score", "serial_no")
+
+
+def _row_field_value(row: dict[str, Any], key: str) -> Any:
+    """Read a row field; accept both plain and ``*_required`` key forms.
+
+    Backend B often returns public-service rows as ``platform_name`` while the
+    catalog / knowledge-base schema uses ``platform_name_required``. Without
+    this bridge, projection fills empty strings and the UI falls back to
+    「条目 N」 titles with blank cells.
+    """
+    if key in row:
+        value = row[key]
+        if value is not None and value != "":
+            return value
+    if key.endswith("_required"):
+        alt = key[: -len("_required")]
+        if alt in row:
+            return row[alt]
+    else:
+        alt = f"{key}_required"
+        if alt in row:
+            return row[alt]
+    return row.get(key, "")
 
 
 def _project_rows(
@@ -634,7 +658,7 @@ def _project_rows(
         if not isinstance(row, dict):
             continue
         if field_keys:
-            projected = {k: row.get(k, "") for k in field_keys}
+            projected = {k: _row_field_value(row, k) for k in field_keys}
             for key in _ROW_PASSTHROUGH_KEYS:
                 if key in row and key not in projected:
                     projected[key] = row[key]

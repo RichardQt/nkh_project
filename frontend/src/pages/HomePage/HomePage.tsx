@@ -19,10 +19,10 @@ const BRAND = {
 
 /** 未选模块时的默认推荐问题。 */
 const DEFAULT_SUGGESTED_QUESTIONS = [
-	"怎样提高高分子材料的耐老化性能？",
-	"如何提升光伏发电系统的能量转化效率？",
-	"如何有效增强高温合金的抗蠕变性能？",
-	"怎样有效提升锂离子电池的能量密度而不牺牲其循环寿命？",
+	"边缘智能研究院南京有限公司",
+	"纤维织物抗菌纳米技术是什么？",
+	"人工智能领域有哪些专家团队？",
+	"和制药相关的平台有哪些？",
 ] as const;
 
 /** 各首页模块对应的推荐问题 */
@@ -30,14 +30,13 @@ const MODULE_SUGGESTED_QUESTIONS: Record<AgentKey, readonly string[]> = {
 	policy_recommend: ["边缘智能研究院南京有限公司"],
 	achievement_eval: ["一种同质外延生长单晶金刚石的籽晶衬底真空钎焊方法"],
 	research_direction: ["边缘智能研究院南京有限公司"],
-	achievement_discover: [
-		"自凝胶止血粉的成果完成人是谁？",
-		"纤维织物抗菌纳米处理技术是什么？",
-	],
-	expert_discover: ["人工智能领域有哪些专家团队？"],
+	achievement_discover: ["灌浆材料存在泌水问题，有哪些好的成果能推荐？"],
+	expert_discover: ["医学领域有哪些专家？"],
 	demand_discover: ["骨科手术影像系统需求有哪些？"],
-	enterprise_discover: ["边缘智能研究院南京有限公司"],
-	platform_discover: ["信号分析仪是什么？"],
+	enterprise_discover: ["人工智能领域有哪些企业？"],
+	platform_discover: [
+		"我们是做生物医药的，需要仪器和平台验证，有哪些可以推荐给我？",
+	],
 };
 
 export default function HomePage() {

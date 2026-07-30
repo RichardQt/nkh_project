@@ -107,7 +107,10 @@ function suggestedFor(agentKey: SceneMockAgentKey): string[] {
  */
 export function startNoDataStream(
   input: SceneMockStreamInput,
-  callbacks: SceneMockStreamCallbacks & { onNoData: (msg: string) => void },
+  callbacks: Pick<
+    SceneMockStreamCallbacks,
+    'onNodeStart' | 'onNodeEnd' | 'onToken' | 'onComplete' | 'onError'
+  > & { onNoData: (msg: string) => void },
 ): ChatStreamController {
   const controller = new AbortController();
   const { agentKey } = input;

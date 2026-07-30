@@ -261,6 +261,7 @@ const ENTRY_TITLE_KEYS = [
   'policy_name',
   'policy_title',
   'platform_name',
+  'platform_name_required',
   'center_name',
   'equipment_name',
   'name',

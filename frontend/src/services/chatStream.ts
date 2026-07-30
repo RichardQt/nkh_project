@@ -684,7 +684,7 @@ function parseRelatedEntries(data: string): RelatedEntriesPayload | null {
       value.length > 0 &&
       value.some((row) => row != null && typeof row === 'object' && !Array.isArray(row));
 
-    const listHasSerialNo = (value: unknown): boolean =>
+    const listHasSerialNo = (value: unknown): value is unknown[] =>
       isObjectRowList(value) &&
       value.some(
         (row) =>

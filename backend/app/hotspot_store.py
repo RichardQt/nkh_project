@@ -6,6 +6,7 @@ Policy sheets use the same projection style as SceneResults.
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -34,9 +35,13 @@ from app.field_schema import (
 )
 
 # Project root: backend/app/hotspot_store.py → parents[2]
+# Local: <repo>/backend/app/... → <repo>
+# Docker: /workspace/backend/app/... → /workspace
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_XLSX = _REPO_ROOT / "英文字段.xlsx"
 _FALLBACK_XLSX = _REPO_ROOT / "outputs" / "english_headers" / "英文字段.xlsx"
+# Docker bind / 显式配置：HOTSPOT_XLSX=/path/to/file.xlsx
+_ENV_XLSX = Path(os.environ["HOTSPOT_XLSX"]) if os.environ.get("HOTSPOT_XLSX") else None
 
 TOP_N = 5
 
@@ -155,12 +160,15 @@ _SHEET_DEFS: tuple[
 
 
 def _resolve_xlsx_path() -> Path:
+    if _ENV_XLSX is not None and _ENV_XLSX.is_file():
+        return _ENV_XLSX
     if _DEFAULT_XLSX.is_file():
         return _DEFAULT_XLSX
     if _FALLBACK_XLSX.is_file():
         return _FALLBACK_XLSX
     raise FileNotFoundError(
         f"未找到热点数据文件：{_DEFAULT_XLSX} 或 {_FALLBACK_XLSX}"
+        + (f" 或 HOTSPOT_XLSX={_ENV_XLSX}" if _ENV_XLSX else "")
     )
 
 
