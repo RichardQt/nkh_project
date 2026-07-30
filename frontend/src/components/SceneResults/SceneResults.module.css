@@ -716,7 +716,6 @@
   color: var(--text-secondary) !important;
   font-size: 13px !important;
   line-height: 1.6 !important;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -827,7 +826,6 @@
   color: var(--text-secondary) !important;
   font-size: 13.5px !important;
   line-height: 1.7 !important;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 

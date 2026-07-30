@@ -137,3 +137,88 @@ npm run build
 cd D:\mynj\nkh_project\backend
 python -m compileall app
 ```
+
+## Docker 离线部署（推荐）
+
+架构：浏览器 → 前端 nginx（静态页 + 反代 `/api`）→ Backend A（本仓库）→ Backend B（第三方，仅改 `.env`）。
+
+### 1. 准备配置（改 B 端不用重新打包）
+
+```bash
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，至少配置上游：
+#   BACKEND_B_BASE_URL=http://<B端IP或主机名>:8001
+#   或 BACKEND_B_HOST / BACKEND_B_PORT
+#   可选 BACKEND_B_API_KEY
+#   可选 ACHIEVEMENT_DISPLAY_FIELDS 等字段投影
+```
+
+容器通过 `env_file` + 挂载 `backend/.env` 注入环境变量。**改端口 / B 端地址只改 `.env`，然后重建 backend 容器即可，不必重新 build 镜像。**
+
+```bash
+# 改完 .env 后：
+docker compose up -d --force-recreate backend
+```
+
+### 2. 有网机器：构建镜像
+
+需已安装 Docker / Docker Compose，且能拉 `python:3.12-slim`、`node:22-alpine`、`nginx:1.27-alpine`。
+
+```bash
+# 仓库根目录
+docker compose build
+# 或分别：
+# docker build -t nkh-backend:latest ./backend
+# docker build -t nkh-frontend:latest ./frontend
+```
+
+### 3. 离线搬到服务器
+
+在有网机器导出：
+
+```bash
+docker save nkh-backend:latest nkh-frontend:latest -o nkh-images.tar
+# 一并拷贝：docker-compose.yml、backend/.env、英文字段.xlsx（热点数据，可选）
+```
+
+服务器导入并启动：
+
+```bash
+docker load -i nkh-images.tar
+# 放好 backend/.env 与 docker-compose.yml 后：
+docker compose up -d
+```
+
+访问：`http://<服务器IP>/`（默认 `WEB_PORT=80`）。后端直连端口默认 `8010`（`BACKEND_PORT`）。
+
+### 4. 常用命令
+
+| 操作 | 命令 |
+|------|------|
+| 启动 | `docker compose up -d` |
+| 看日志 | `docker compose logs -f backend` |
+| 只改 `.env` 生效 | `docker compose up -d --force-recreate backend` |
+| 停 | `docker compose down` |
+| 清数据卷（登录/会话库） | `docker compose down -v` |
+
+### 5. 环境变量说明（`backend/.env`）
+
+| 变量 | 说明 |
+|------|------|
+| `BACKEND_B_BASE_URL` | 上游 B 完整地址，优先 |
+| `BACKEND_B_HOST` / `BACKEND_B_PORT` | 无 BASE_URL 时拼地址 |
+| `BACKEND_B_STREAM_PATH` | 默认 `/api/chat/stream` |
+| `BACKEND_B_API_KEY` | 可选，Bearer 调 B |
+| `ACHIEVEMENT_DISPLAY_FIELDS` 等 | 列表字段投影 |
+| `LLM_*` | 遗留 LLM，主链路可不配 |
+
+宿主机端口映射可在启动前设置：`WEB_PORT=8080 BACKEND_PORT=8010 docker compose up -d`。
+
+### 6. 说明
+
+- 前端无 `VITE_*` 构建变量，生产同源走 nginx 反代 `/api` → `backend:8010`，SSE 已关缓冲。
+- SQLite 在 volume `backend-data`，重启不丢账号与会话。
+- 演示账号：`admin` / `nkh@2026`，`test0` / `nkh@2026`。
+- 服务器需能访问 B 端地址（容器内网络，勿写 `127.0.0.1` 指宿主机上的 B，应写宿主机局域网 IP 或 `host.docker.internal`）。
+- 热点数据：取消注释 `docker-compose.yml` 里 `英文字段.xlsx` 挂载，路径对应容器内 `/workspace/英文字段.xlsx`。
+- 纯离线 pip：有网机 `pip download -r backend/requirements.txt -d wheels`，Dockerfile 改为 `pip install --no-index --find-links=wheels -r requirements.txt`；前端优先直接 `docker save` 已构建镜像。

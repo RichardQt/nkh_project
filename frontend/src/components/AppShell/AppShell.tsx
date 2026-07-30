@@ -9,11 +9,12 @@ import {
   ShareAltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Button, Divider, Drawer, Layout, Typography } from 'antd';
+import { Button, Divider, Drawer, Layout, Modal, Typography } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import ConversationHistory from '../ConversationHistory/ConversationHistory';
 import { conversationPath } from '../../services/conversationApi';
+import { useChatStream } from '../../context/ChatStreamContext';
 import type { ConversationSummary } from '../../types/conversation';
 import styles from './AppShell.module.css';
 
@@ -21,8 +22,6 @@ const { Content, Sider } = Layout;
 
 interface SidebarPanelProps {
   activePath: string;
-  /** Only on chat detail routes: show history list. */
-  showHistory: boolean;
   activeConversationId: string | null;
   showKnowledgeBase: boolean;
   username: string;
@@ -35,7 +34,6 @@ interface SidebarPanelProps {
 
 function SidebarPanel({
   activePath,
-  showHistory,
   activeConversationId,
   showKnowledgeBase,
   username,
@@ -143,18 +141,12 @@ function SidebarPanel({
         ) : null}
       </nav>
 
-      {showHistory ? (
-        <>
-          <Divider className={styles.sidebarDivider} />
-          <ConversationHistory
-            activeConversationId={activeConversationId}
-            onSelect={onSelectConversation}
-            onDeleted={onDeletedConversation}
-          />
-        </>
-      ) : (
-        <div className={styles.sidebarBlank} aria-hidden="true" />
-      )}
+      <Divider className={styles.sidebarDivider} />
+      <ConversationHistory
+        activeConversationId={activeConversationId}
+        onSelect={onSelectConversation}
+        onDeleted={onDeletedConversation}
+      />
 
       <div className={styles.userFooter}>
         <div className={styles.userMeta}>
@@ -196,19 +188,39 @@ export default function AppShell() {
   }, [location.search]);
 
   // History only on chat detail pages (/chat, /chat/:agentKey), not home or agents.
-  const showHistory = location.pathname.startsWith('/chat');
   const showKnowledgeBase = user?.role === 'admin';
   const username = user?.username ?? '';
   const roleLabel = user?.role === 'admin' ? '管理员' : '普通用户';
 
+  const { isRequesting } = useChatStream();
+
+  const confirmLeaveStream = (onConfirm: () => void) => {
+    if (!isRequesting) {
+      onConfirm();
+      return;
+    }
+    Modal.confirm({
+      title: '离开会中断对话',
+      content: '当前 AI 正在回答中，离开后本次回答将停止。确定离开吗？',
+      okText: '确定离开',
+      cancelText: '继续等待',
+      okButtonProps: { danger: true },
+      onOk: onConfirm,
+    });
+  };
+
   const handleNavigate = (path: string) => {
-    setDrawerOpen(false);
-    navigate(path);
+    confirmLeaveStream(() => {
+      setDrawerOpen(false);
+      navigate(path);
+    });
   };
 
   const handleSelectConversation = (item: ConversationSummary) => {
-    setDrawerOpen(false);
-    navigate(conversationPath(item));
+    confirmLeaveStream(() => {
+      setDrawerOpen(false);
+      navigate(conversationPath(item));
+    });
   };
 
   const handleDeletedConversation = (id: string) => {
@@ -243,7 +255,6 @@ export default function AppShell() {
 
   const sidebarProps = {
     activePath: location.pathname,
-    showHistory,
     activeConversationId,
     showKnowledgeBase,
     username,

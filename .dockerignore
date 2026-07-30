@@ -1,0 +1,14 @@
+.git
+.agents
+.bak
+bak
+outputs
+**/node_modules
+frontend/dist
+frontend/node_modules
+backend/data
+backend/.env
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.DS_Store

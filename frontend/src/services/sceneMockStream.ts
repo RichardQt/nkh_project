@@ -102,6 +102,82 @@ function suggestedFor(agentKey: SceneMockAgentKey): string[] {
 }
 
 /**
+ * No-data stream: runs the full thought-chain, then surfaces a "no data"
+ * message. Does not stream scene-specific mock thinking tokens.
+ */
+export function startNoDataStream(
+  input: SceneMockStreamInput,
+  callbacks: SceneMockStreamCallbacks & { onNoData: (msg: string) => void },
+): ChatStreamController {
+  const controller = new AbortController();
+  const { agentKey } = input;
+  const intent = intentForAgent(agentKey);
+  const optimizedQuery = optimizedQueryFor(agentKey, input.message);
+
+  void (async () => {
+    try {
+      const emitStart = async (node: string) => {
+        callbacks.onNodeStart?.({ node });
+        await wait(320, controller.signal);
+      };
+      const emitEnd = async (
+        node: string,
+        extra: Partial<WorkflowNodeEvent> = {},
+      ) => {
+        callbacks.onNodeEnd?.({
+          node,
+          intent,
+          categories: [intent],
+          needClarify: false,
+          optimizedQuery:
+            node === 'retrieval' || node === 'generate'
+              ? optimizedQuery
+              : undefined,
+          ...extra,
+        });
+        await wait(420, controller.signal);
+      };
+
+      await emitStart('intent_classify');
+      await emitEnd('intent_classify');
+
+      await emitStart('followup_check');
+      await emitEnd('followup_check', { needClarify: false });
+
+      await emitStart('clarify');
+      await emitEnd('clarify', { needClarify: false });
+
+      await emitStart('retrieval');
+      await emitEnd('retrieval', { needClarify: false, optimizedQuery });
+
+      await emitStart('generate');
+      await emitEnd('generate', { needClarify: false, optimizedQuery });
+
+      // Brief "reasoning" pulse so the thought chain shows 深度思考, without
+      // leaking the hit-path mock thinking copy into the answer area.
+      callbacks.onToken('');
+      await wait(650, controller.signal);
+
+      callbacks.onNoData(
+        '当前数据库暂无包含此内容的相关信息，待管理员补充数据后再试。',
+      );
+      await wait(280, controller.signal);
+      callbacks.onComplete();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        callbacks.onError(error);
+        return;
+      }
+      callbacks.onError(
+        error instanceof Error ? error : new Error('场景演示生成失败'),
+      );
+    }
+  })();
+
+  return { abort: () => controller.abort() };
+}
+
+/**
  * Local fake SSE for policy / eval / research scenes.
  * Event order mirrors backend/test/mock_sse_fixed.py normal flow:
  * node_start/end (intent → followup → clarify → retrieval → generate)

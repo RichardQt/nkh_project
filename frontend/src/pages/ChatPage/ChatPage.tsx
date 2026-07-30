@@ -31,6 +31,8 @@ import { useReducedMotion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import HotspotBar from '../../components/HotspotBar/HotspotBar';
 import { KnowledgeGraphModal } from '../../components/KnowledgeGraph/KnowledgeGraphModal';
+import { MarkdownContent } from '../../components/MarkdownContent/MarkdownContent';
+import { useChatStream } from '../../context/ChatStreamContext';
 import {
   SceneResultPanel,
   SearchPreviewPanel,
@@ -52,7 +54,7 @@ import {
   saveConversation,
   titleFromMessages,
 } from '../../services/conversationApi';
-import { startSceneMockStream } from '../../services/sceneMockStream';
+import { startSceneMockStream, startNoDataStream } from '../../services/sceneMockStream';
 import type { AgentKey } from '../../types/agent';
 import type {
   AnswerTurn,
@@ -1513,7 +1515,11 @@ function AnswerSegment({
       ) : null}
 
       {target.thinkContent ? (
-        <div className={styles.modelStream}>{target.thinkContent}</div>
+        <MarkdownContent
+          content={target.thinkContent}
+          className={styles.modelStream}
+          streaming={isStreaming}
+        />
       ) : null}
 
       {target.searchPreview ? (
@@ -1560,9 +1566,10 @@ function AnswerSegment({
           !target.sceneResult &&
           !target.searchPreview &&
           !showClarifyPanel)) ? (
-        <Typography.Paragraph className={styles.fallbackText}>
-          {target.content}
-        </Typography.Paragraph>
+        <MarkdownContent
+          content={target.content}
+          className={styles.fallbackText}
+        />
       ) : null}
     </div>
   );
@@ -1680,6 +1687,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const reduceMotion = useReducedMotion();
   const [value, setValue] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
+  const { setIsRequesting: setStreamRequesting } = useChatStream();
   /** Per-message like / dislike (frontend only, not persisted). */
   const [feedbackById, setFeedbackById] = useState<
     Record<string, MessageFeedback | undefined>
@@ -1726,7 +1734,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const setRequesting = useCallback((next: boolean) => {
     isRequestingRef.current = next;
     setIsRequesting(next);
-  }, []);
+    setStreamRequesting(next);
+  }, [setStreamRequesting]);
 
   const ensureConversationId = useCallback(() => {
     if (conversationIdRef.current) {
@@ -1977,6 +1986,143 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       };
 
       if (isSceneMockAgentKey(agentKey)) {
+        // 关键词门控：命中场景演示关键词才走 mock，否则走无数据流程
+        const hitsSceneDemoKeyword =
+          agentKey === 'achievement_eval'
+            ? question.includes('单晶金刚石的籽晶衬底真空钎焊方法')
+            : question.includes('边缘智能研究');
+        if (!hitsSceneDemoKeyword) {
+          requestRef.current = startNoDataStream(
+            { agentKey, message: question },
+            {
+              onNodeStart: (event) => {
+                if (
+                  !isActiveTarget() ||
+                  (event.node !== 'intent_classify' &&
+                    event.node !== 'followup_check' &&
+                    event.node !== 'clarify' &&
+                    event.node !== 'retrieval')
+                ) {
+                  return;
+                }
+                patchTarget((target) => ({
+                  ...target,
+                  thoughtState: updateThoughtNode(
+                    target.thoughtState,
+                    event,
+                    'start',
+                  ),
+                  status: 'updating',
+                }));
+              },
+              onNodeEnd: (event) => {
+                if (
+                  !isActiveTarget() ||
+                  (event.node !== 'intent_classify' &&
+                    event.node !== 'followup_check' &&
+                    event.node !== 'clarify' &&
+                    event.node !== 'retrieval')
+                ) {
+                  return;
+                }
+                patchTarget((target) => ({
+                  ...target,
+                  thoughtState: updateThoughtNode(
+                    target.thoughtState,
+                    event,
+                    'end',
+                  ),
+                  status: 'updating',
+                }));
+              },
+              onToken: (content) => {
+                if (!isActiveTarget()) return;
+                // Empty token only advances 深度思考; non-empty would be shown
+                // in modelStream, so no-data path must not stream mock copy.
+                patchTarget((target) => ({
+                  ...target,
+                  ...(content
+                    ? {
+                        thinkContent: `${target.thinkContent ?? ''}${content}`,
+                      }
+                    : {}),
+                  thoughtState: activateReasoning(target.thoughtState),
+                  status: 'updating',
+                }));
+              },
+              onNoData: (msg) => {
+                if (!isActiveTarget()) return;
+                patchTarget((target) => ({
+                  ...target,
+                  content: msg,
+                  status: 'updating',
+                }));
+              },
+              onComplete: () => {
+                if (!isActiveTarget()) return;
+                activeAnswerRef.current = null;
+                activeTurnRef.current = null;
+                requestRef.current = null;
+                setRequesting(false);
+                sessionStorage.removeItem(pendingStorageKey(sessionKey));
+                setMessages((current) => {
+                  const next = updateActiveTarget(
+                    current,
+                    answerId,
+                    turnId,
+                    (target) => ({
+                      ...target,
+                      status: 'success',
+                      thoughtState: completeThoughtState(
+                        target.thoughtState,
+                        Boolean(target.content?.trim()),
+                      ),
+                    }),
+                  );
+                  schedulePersist(next);
+                  return next;
+                });
+              },
+              onError: (error) => {
+                if (!isActiveTarget()) return;
+                activeAnswerRef.current = null;
+                activeTurnRef.current = null;
+                requestRef.current = null;
+                setRequesting(false);
+                if (error.name !== 'AbortError') {
+                  sessionStorage.removeItem(pendingStorageKey(sessionKey));
+                }
+                const fallbackMessage =
+                  error.name === 'AbortError'
+                    ? '已停止生成。'
+                    : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
+                setMessages((current) => {
+                  const next = updateActiveTarget(
+                    current,
+                    answerId,
+                    turnId,
+                    (target) => ({
+                      ...target,
+                      status: error.name === 'AbortError' ? 'abort' : 'error',
+                      thoughtState: stopThoughtState(
+                        target.thoughtState,
+                        error.name === 'AbortError' ? 'abort' : 'error',
+                      ),
+                      content:
+                        error.name === 'AbortError'
+                          ? target.content || fallbackMessage
+                          : fallbackMessage,
+                    }),
+                  );
+                  schedulePersist(next);
+                  return next;
+                });
+              },
+            },
+          );
+          return;
+        }
+
         requestRef.current = startSceneMockStream(
           {
             agentKey,
@@ -2588,9 +2734,10 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
 
           return (
             <div className={styles.answerContent}>
-              <Typography.Paragraph className={styles.fallbackText}>
-                {String(_content ?? '')}
-              </Typography.Paragraph>
+              <MarkdownContent
+                content={String(_content ?? '')}
+                className={styles.fallbackText}
+              />
             </div>
           );
         },

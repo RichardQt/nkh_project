@@ -13,6 +13,7 @@ import type {
   SearchPreviewState,
 } from '../../types/scene';
 import { RESEARCH_DIRECTION_SUMMARY_PILLARS } from '../../data/sceneMocks';
+import { MarkdownContent } from '../MarkdownContent/MarkdownContent';
 import styles from './SceneResults.module.css';
 
 interface SearchPreviewPanelProps {
@@ -324,9 +325,10 @@ function PolicyRecommendPanel({ result }: { result: PolicyRecommendResult }) {
             <Typography.Text className={styles.summaryLayerLabel}>
               推荐理由
             </Typography.Text>
-            <Typography.Paragraph className={styles.summaryText}>
-              {result.recommendReason}
-            </Typography.Paragraph>
+            <MarkdownContent
+              content={result.recommendReason}
+              className={styles.summaryText}
+            />
           </div>
         </section>
       ) : null}
@@ -481,9 +483,10 @@ function AchievementEvalPanel({ result }: { result: AchievementEvalResult }) {
                 <Typography.Text className={styles.summaryLayerLabel}>
                   推荐原因
                 </Typography.Text>
-                <Typography.Paragraph className={styles.reasonText}>
-                  {item.reason}
-                </Typography.Paragraph>
+                <MarkdownContent
+                  content={item.reason}
+                  className={styles.reasonText}
+                />
               </div>
             </div>
           </section>
@@ -600,9 +603,10 @@ function ResearchDirectionPanel({
             <Typography.Text className={styles.summaryLayerLabel}>
               推荐理由
             </Typography.Text>
-            <Typography.Paragraph className={styles.summaryText}>
-              {result.recommendReason}
-            </Typography.Paragraph>
+            <MarkdownContent
+              content={result.recommendReason}
+              className={styles.summaryText}
+            />
           </div>
         ) : null}
       </section>

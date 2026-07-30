@@ -208,7 +208,6 @@
   color: var(--text);
   font-size: 14.5px;
   line-height: 1.72;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
@@ -703,7 +702,6 @@
   color: var(--text);
   font-size: 14.5px;
   line-height: 1.72;
-  white-space: pre-wrap;
 }
 
 .introContent {

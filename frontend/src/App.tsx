@@ -5,6 +5,7 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import RequireAdmin from './auth/RequireAdmin';
 import RequireAuth from './auth/RequireAuth';
 import AppShell from './components/AppShell/AppShell';
+import { ChatStreamProvider } from './context/ChatStreamContext';
 import { isAgentKey } from './data/agents';
 
 const HomePage = lazy(() => import('./pages/HomePage/HomePage'));
@@ -71,7 +72,13 @@ export default function App() {
       />
 
       <Route element={<RequireAuth />}>
-        <Route element={<AppShell />}>
+        <Route
+          element={
+            <ChatStreamProvider>
+              <AppShell />
+            </ChatStreamProvider>
+          }
+        >
           <Route
             index
             element={
