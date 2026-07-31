@@ -19,6 +19,9 @@ const KnowledgeGraphPage = lazy(
 const KnowledgeBasePage = lazy(
   () => import('./pages/KnowledgeBasePage/KnowledgeBasePage'),
 );
+const ModelConfigPage = lazy(
+  () => import('./pages/ModelConfigPage/ModelConfigPage'),
+);
 const LoginPage = lazy(() => import('./pages/LoginPage/LoginPage'));
 
 function PageBoundary({ children }: { children: ReactNode }) {
@@ -109,6 +112,16 @@ export default function App() {
               <PageBoundary>
                 <RequireAdmin>
                   <KnowledgeBasePage />
+                </RequireAdmin>
+              </PageBoundary>
+            }
+          />
+          <Route
+            path="model-config"
+            element={
+              <PageBoundary>
+                <RequireAdmin>
+                  <ModelConfigPage />
                 </RequireAdmin>
               </PageBoundary>
             }

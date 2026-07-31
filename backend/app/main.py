@@ -74,6 +74,12 @@ from app.field_schema import (
     selected_fields,
 )
 from app.hotspot_store import get_hotspots
+from app.model_config_store import (
+    get_model_config_public,
+    init_model_config,
+    save_model_config,
+    test_model_config,
+)
 from app.proxy_stream import stream_from_backend_b
 
 
@@ -100,12 +106,23 @@ def get_current_user(request: Request) -> dict[str, Any]:
     return user
 
 
+def get_current_admin(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Require an authenticated admin user."""
+
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """App startup / shutdown hooks (replaces deprecated on_event)."""
 
     init_db()
     init_auth()
+    init_model_config()
     admin = get_user_by_username("admin")
     if admin is not None:
         migrate_orphan_conversations(admin["id"])
@@ -554,6 +571,66 @@ async def stream_chat(
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
+
+
+# ---------------------------------------------------------------------------
+# Admin: model configuration (LLM + embedding)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/admin/model-config")
+def api_get_model_config(
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Return masked LLM / embedding settings for the admin UI."""
+
+    return get_model_config_public()
+
+
+@app.put("/api/admin/model-config")
+async def api_put_model_config(
+    request: Request,
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Save LLM / embedding settings. Empty masked secrets keep previous values."""
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    try:
+        return save_model_config(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/admin/model-config/test")
+async def api_test_model_config(
+    request: Request,
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Connectivity probe for saved LLM or embedding config."""
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    kind = body.get("kind")
+    if kind not in ("llm", "embedding"):
+        raise HTTPException(status_code=422, detail="kind 必须是 llm 或 embedding")
+
+    try:
+        return await test_model_config(kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  ApiOutlined,
   AppstoreOutlined,
   ArrowLeftOutlined,
   DatabaseOutlined,
@@ -24,6 +25,7 @@ interface SidebarPanelProps {
   activePath: string;
   activeConversationId: string | null;
   showKnowledgeBase: boolean;
+  showModelConfig: boolean;
   username: string;
   roleLabel: string;
   onNavigate: (path: string) => void;
@@ -36,6 +38,7 @@ function SidebarPanel({
   activePath,
   activeConversationId,
   showKnowledgeBase,
+  showModelConfig,
   username,
   roleLabel,
   onNavigate,
@@ -56,6 +59,9 @@ function SidebarPanel({
   const kbActive =
     activePath === '/knowledge-base' ||
     activePath.startsWith('/knowledge-base/');
+  const modelConfigActive =
+    activePath === '/model-config' ||
+    activePath.startsWith('/model-config/');
 
   return (
     <div className={styles.sidebarPanel}>
@@ -139,6 +145,20 @@ function SidebarPanel({
             知识库设置
           </Button>
         ) : null}
+
+        {showModelConfig ? (
+          <Button
+            type="default"
+            icon={<ApiOutlined />}
+            size="large"
+            block
+            className={`${styles.navEntryButton} ${modelConfigActive ? styles.navEntryButtonActive : ''}`}
+            onClick={() => onNavigate('/model-config')}
+            aria-current={modelConfigActive ? 'page' : undefined}
+          >
+            模型配置
+          </Button>
+        ) : null}
       </nav>
 
       <Divider className={styles.sidebarDivider} />
@@ -189,6 +209,7 @@ export default function AppShell() {
 
   // History only on chat detail pages (/chat, /chat/:agentKey), not home or agents.
   const showKnowledgeBase = user?.role === 'admin';
+  const showModelConfig = user?.role === 'admin';
   const username = user?.username ?? '';
   const roleLabel = user?.role === 'admin' ? '管理员' : '普通用户';
 
@@ -257,6 +278,7 @@ export default function AppShell() {
     activePath: location.pathname,
     activeConversationId,
     showKnowledgeBase,
+    showModelConfig,
     username,
     roleLabel,
     onNavigate: handleNavigate,
