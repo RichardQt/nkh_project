@@ -10,6 +10,7 @@ Upstream (B) events of interest:
 
 Downstream (A -> frontend) events:
   - meta, node_start, node_end, clarify, token, related_entries, done, error
+  - achievement_eval extras: optimized_query, section_stream, progress, web_search, score
 """
 
 from __future__ import annotations
@@ -342,8 +343,15 @@ async def stream_from_backend_b(
                         raw_data,
                         function=function,
                     ):
-                        if frame.startswith("event: token"):
+                        if frame.startswith("event: token") or frame.startswith(
+                            "event: section_stream"
+                        ):
                             emitted_token = True
+                        elif frame.startswith("event: score") or frame.startswith(
+                            "event: web_search"
+                        ):
+                            # Structured eval / search hits count as usable content
+                            emitted_entries = True
                         elif frame.startswith("event: node_end"):
                             payload = _parse_json_object(raw_data) or {}
                             node = str(payload.get("node") or "").strip()
@@ -522,6 +530,76 @@ async def _handle_upstream_event(
         content = _extract_content(raw_data)
         if content:
             yield sse("token", {"content": content})
+        return
+
+    # achievement_eval: keyword extraction (keywords[] + query)
+    if name in ("optimized_query", "optimizedquery"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        yield sse("optimized_query", parsed)
+        return
+
+    # achievement_eval: sectioned model text (brief / summary / …)
+    if name in ("section_stream", "sectionstream"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        section = parsed.get("section")
+        content = parsed.get("content")
+        if not isinstance(section, str) or not section.strip():
+            return
+        if not isinstance(content, str) or not content:
+            return
+        yield sse(
+            "section_stream",
+            {"section": section.strip(), "content": content},
+        )
+        return
+
+    # achievement_eval: progress text (e.g. web search status → 检索词)
+    if name == "progress":
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        message = parsed.get("message")
+        if not isinstance(message, str) or not message.strip():
+            return
+        yield sse("progress", {"message": message.strip()})
+        return
+
+    # achievement_eval: web search hit (title / brief / URL)
+    if name in ("web_search", "websearch"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        title = parsed.get("title")
+        brief = parsed.get("brief")
+        if not isinstance(title, str) or not title.strip():
+            return
+        if not isinstance(brief, str) or not brief.strip():
+            return
+        url = parsed.get("URL")
+        if not isinstance(url, str):
+            url = parsed.get("url")
+        if not isinstance(url, str):
+            url = ""
+        yield sse(
+            "web_search",
+            {
+                "title": title.strip(),
+                "brief": brief,
+                "URL": url.strip(),
+            },
+        )
+        return
+
+    # achievement_eval: dimension scores + simple_brief + total_score
+    if name in ("score", "scores"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        yield sse("score", parsed)
         return
 
     if name in ("related_entries", "related", "business", "entries"):

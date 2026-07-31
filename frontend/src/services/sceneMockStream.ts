@@ -1,13 +1,14 @@
 import {
   ACHIEVEMENT_EVAL_THINKING,
+  buildAchievementEvalResult,
   buildSceneResult,
   buildSearchResults,
   PLACEHOLDER,
   POLICY_RECOMMEND_THINKING,
-  RESEARCH_DIRECTION_SUMMARY,
   RESEARCH_DIRECTION_THINKING,
   splitThinkingTokens,
 } from '../data/sceneMocks';
+
 import type {
   SceneMockAgentKey,
   SceneResult,
@@ -19,16 +20,20 @@ import type {
 } from './chatStream';
 import type { WorkflowNodeEvent } from '../types/chat';
 
+/** Mock-driven scenes, including achievement_eval demo keyword path. */
+export type SceneMockStreamAgentKey =
+  | SceneMockAgentKey
+  | 'achievement_eval';
+
 export interface SceneMockStreamCallbacks extends ChatStreamCallbacks {
   onSearchPreview?: (preview: SearchPreviewState) => void;
   onSceneResult?: (result: SceneResult) => void;
 }
 
 interface SceneMockStreamInput {
-  agentKey: SceneMockAgentKey;
+  agentKey: SceneMockStreamAgentKey;
   message: string;
 }
-
 function wait(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     if (signal.aborted) {
@@ -47,7 +52,7 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
-function intentForAgent(agentKey: SceneMockAgentKey): string {
+function intentForAgent(agentKey: SceneMockStreamAgentKey): string {
   // Intent follows the frontend scene entry, not the downstream list template.
   if (agentKey === 'policy_recommend') {
     return 'policies';
@@ -59,7 +64,7 @@ function intentForAgent(agentKey: SceneMockAgentKey): string {
 }
 
 function optimizedQueryFor(
-  agentKey: SceneMockAgentKey,
+  agentKey: SceneMockStreamAgentKey,
   message: string,
 ): string {
   const base = message.trim() || PLACEHOLDER;
@@ -72,7 +77,7 @@ function optimizedQueryFor(
   return `${base} 研发方向 专家团队 智慧医疗`;
 }
 
-function thinkTokens(agentKey: SceneMockAgentKey): string[] {
+function thinkTokens(agentKey: SceneMockStreamAgentKey): string[] {
   if (agentKey === 'policy_recommend') {
     return splitThinkingTokens(POLICY_RECOMMEND_THINKING);
   }
@@ -82,7 +87,7 @@ function thinkTokens(agentKey: SceneMockAgentKey): string[] {
   return splitThinkingTokens(RESEARCH_DIRECTION_THINKING);
 }
 
-function suggestedFor(agentKey: SceneMockAgentKey): string[] {
+function suggestedFor(agentKey: SceneMockStreamAgentKey): string[] {
   if (agentKey === 'policy_recommend') {
     return [
       '还有哪些完全满足的省级政策？',
@@ -271,7 +276,10 @@ export function startSceneMockStream(
         await wait(700, controller.signal);
       }
 
-      const result = buildSceneResult(agentKey, message);
+      const result =
+        agentKey === 'achievement_eval'
+          ? buildAchievementEvalResult(message)
+          : buildSceneResult(agentKey, message);
 
       if (result.kind === 'research_direction') {
         // First surface experts + empty summary shell, then type the summary.

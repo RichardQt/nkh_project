@@ -98,7 +98,6 @@
 .policyCard,
 .policyEntryCard,
 .evalCard,
-.searchCard,
 .rankCard,
 .summaryCard {
   min-width: 0;
@@ -755,6 +754,14 @@
   overflow-wrap: anywhere;
 }
 
+.searchHint {
+  margin: 0 !important;
+  color: var(--primary) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+}
+
 .searchStatus {
   display: inline-flex;
   align-items: center;
@@ -775,38 +782,65 @@
   animation: searchPulse 1.1s ease-in-out infinite;
 }
 
-.searchList {
+.searchDocs {
   display: grid;
-  gap: 8px;
+  gap: 14px;
 }
 
-.searchCard {
-  padding: 12px;
-  background: var(--surface);
+.searchDoc {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.searchDoc + .searchDoc {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
 
 .searchCardTitle {
-  margin: 0 0 4px !important;
+  margin: 0 !important;
   color: var(--text) !important;
-  font-size: 13.5px !important;
+  font-size: 14px !important;
   font-weight: 600 !important;
-  line-height: 1.4 !important;
+  line-height: 1.45 !important;
 }
 
-.searchSource {
-  display: block;
-  margin-bottom: 6px;
+.searchField {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.searchFieldLabel {
   color: var(--text-tertiary);
   font-size: 11px;
-  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .searchSnippet {
-  margin: 0 0 8px !important;
+  margin: 0 !important;
   color: var(--text-secondary) !important;
   font-size: 12.5px !important;
-  line-height: 1.55 !important;
-  white-space: pre-wrap;
+  line-height: 1.6 !important;
+  overflow-wrap: anywhere;
+}
+
+.searchSnippet :global(ul),
+.searchSnippet :global(ol) {
+  margin: 0.4em 0 !important;
+  padding-left: 1.2em !important;
+}
+
+.searchSnippet :global(p) {
+  margin: 0 0 0.5em !important;
+}
+
+.searchSnippet :global(p:last-child) {
+  margin-bottom: 0 !important;
 }
 
 .summaryCard {

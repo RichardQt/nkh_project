@@ -448,13 +448,24 @@ def _function_from_category(raw: Any) -> str | None:
         "enterprise": "enterprises",
         "policies": "policies",
         "policy": "policies",
+        "policy_recommend": "policies",
         "platforms": "platforms",
         "platform": "platforms",
+        # 场景型（非 xx 发现列表）
+        "achievement_eval": "achievement_eval",
+        "research_direction": "research_direction",
     }
     mapped = aliases.get(token)
-    if mapped and mapped in _FUNCTION_SCHEMA:
-        return mapped
+    if mapped:
+        # list schemas or scene functions from AGENT_FUNCTION_MAP values
+        if mapped in _FUNCTION_SCHEMA or mapped in {
+            "achievement_eval",
+            "research_direction",
+        }:
+            return mapped
     if token in _FUNCTION_SCHEMA:
+        return token
+    if token in {"achievement_eval", "research_direction"}:
         return token
     return None
 

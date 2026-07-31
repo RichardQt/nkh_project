@@ -183,7 +183,7 @@ export const ACHIEVEMENT_EVAL_REASON =
 	'该技术成果属于"高价值、低成熟度"型项目。其创新点在于精准锁定MWCVD制备单晶金刚石的两大行业痛点——籽晶气流移位与界面石墨化，通过Fe-Ti-Cr-Ni多元合金真空钎焊工艺将剪切结合强度提升至10MPa、界面热导率提高3倍以上，技术路线务实且与现有产线兼容性好，团队背景可靠，下游半导体散热、航天光学等战略应用领域前景广阔；但核心短板在于成熟度仅停留在实验室样件阶段，尚未经工程化量产验证，且作为制备配套工艺其直接市场规模受限于单晶金刚石产业整体发展节奏，建议以合作开发或技术许可模式联合下游企业推进中试验证，重点突破大尺寸一致性、长期热循环可靠性及量产成本等关键工程化瓶颈，若能在短期内完成中试验证，其产业化价值将显著提升。';
 
 export function buildSearchResults(
-	agentKey: SceneMockAgentKey,
+	agentKey: SceneMockAgentKey | "achievement_eval",
 	question: string,
 ): { query: string; results: SearchResultItem[] } {
 	if (agentKey === "achievement_eval") {
@@ -193,11 +193,12 @@ export function buildSearchResults(
 			query,
 			results: [
 				{
-          title: "MWCVD 法制备单晶金刚石：籽晶固定与界面热管理研究进展",
-          source: "中国发明专利 CN104878447B / 国家知识产权局",
-          snippet:"微波等离子体 CVD 生长过程中，籽晶在气流冲击下易发生微位移，导致孪晶与多晶缺陷；籽晶—衬底界面热阻过高还会诱发局部石墨化，影响同质外延质量与成品率。",
-          url: "https://www.soopat.com/Patent/CN104878447B",
-        },
+					title: "MWCVD 法制备单晶金刚石：籽晶固定与界面热管理研究进展",
+					source: "中国发明专利 CN104878447B / 国家知识产权局",
+					snippet:
+						"微波等离子体 CVD 生长过程中，籽晶在气流冲击下易发生微位移，导致孪晶与多晶缺陷；籽晶—衬底界面热阻过高还会诱发局部石墨化，影响同质外延质量与成品率。",
+					url: "https://www.soopat.com/Patent/CN104878447B",
+				},
 				{
 					title: "金刚石与金属衬底真空钎焊：活性焊料体系与结合强度综述",
 					source:
@@ -419,9 +420,6 @@ export function buildSceneResult(
 	if (agentKey === "policy_recommend") {
 		return buildPolicyRecommendResult(question);
 	}
-	if (agentKey === "achievement_eval") {
-		return buildAchievementEvalResult(question);
-	}
 	return buildResearchDirectionResult(question);
 }
 
@@ -448,17 +446,21 @@ export function splitThinkingTokens(text: string): string[] {
 	return tokens.length ? tokens : [trimmed];
 }
 
-export function sceneIntroCopy(agentKey: SceneMockAgentKey): string {
+export function sceneIntroCopy(
+	agentKey: SceneMockAgentKey | "achievement_eval",
+): string {
 	if (agentKey === "policy_recommend") {
 		return "当前场景：政策推荐。请输入企业名称或企业信息，系统将按完全满足 / 部分满足分层返回省级与市级政策，支持列表与详情查看。";
 	}
 	if (agentKey === "achievement_eval") {
-		return "当前场景：成果评估。请输入成果详细信息，系统将先分析问题并检索公开资料，再从创新性、成熟度、市场前景、可行性四维评分并给出推荐理由。";
+		return "当前场景：成果评估。请输入成果详细信息，系统将先分析问题并检索公开资料，再从创新性、成熟度、市场前景、可行性四维评分并给出评分原因。";
 	}
 	return "当前场景：研究方向。请输入企业名称或企业信息，系统将先展示检索过程，再给出匹配专家团队与研发方向总结。";
 }
 
-export function scenePlaceholder(agentKey: SceneMockAgentKey): string {
+export function scenePlaceholder(
+	agentKey: SceneMockAgentKey | "achievement_eval",
+): string {
 	if (agentKey === "policy_recommend") {
 		return "输入企业名称或企业信息…";
 	}

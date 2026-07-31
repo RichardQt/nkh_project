@@ -75,13 +75,13 @@ function SidebarPanel({
         type="text"
         className={styles.brand}
         onClick={() => onNavigate('/')}
-        aria-label="返回 AI 创新助手入口"
+        aria-label="返回宁科荟智能助手入口"
       >
         <span className={styles.brandMark} aria-hidden="true">
           <RobotOutlined />
         </span>
         <span className={styles.brandText}>
-          <Typography.Text strong>AI 创新助手</Typography.Text>
+          <Typography.Text strong>宁科荟智能助手</Typography.Text>
           <Typography.Text type="secondary">专注创新与研发</Typography.Text>
         </span>
       </Button>

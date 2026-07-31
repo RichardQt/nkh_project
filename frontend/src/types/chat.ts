@@ -65,6 +65,8 @@ export interface WorkflowNodeEvent {
   ragCount?: number;
   kgCount?: number;
   optimizedQuery?: string;
+  /** From optimized_query / node payloads when present. */
+  keywords?: string[];
 }
 
 export interface IntentThoughtStep {

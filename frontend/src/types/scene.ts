@@ -1,17 +1,21 @@
 import type { RelatedEntriesPayload } from './chat';
 
-/** Fake search-engine hit shown before final scene results. */
+/** Search-engine hit (mock or real web_search event). */
 export interface SearchResultItem {
   title: string;
-  source: string;
+  /** Optional; omitted when upstream has no source field. */
+  source?: string;
   snippet: string;
-  url: string;
+  /** Optional; empty URL is not shown as a link. */
+  url?: string;
 }
 
 export interface SearchPreviewState {
   query: string;
   status: 'loading' | 'success';
   results: SearchResultItem[];
+  /** Shown while loading, e.g. 正在调取联网搜索 */
+  statusHint?: string;
 }
 
 /** 省级政策（provincial_policies）— 列表 + 详情字段 */
@@ -110,9 +114,9 @@ export type SceneResult =
   | AchievementEvalResult
   | ResearchDirectionResult;
 
+/** Scenes still driven by local mock SSE (achievement_eval uses real /api/chat/stream). */
 export const SCENE_MOCK_AGENT_KEYS = [
   'policy_recommend',
-  'achievement_eval',
   'research_direction',
 ] as const;
 
@@ -121,9 +125,148 @@ export type SceneMockAgentKey = (typeof SCENE_MOCK_AGENT_KEYS)[number];
 export function isSceneMockAgentKey(
   value: string | null | undefined,
 ): value is SceneMockAgentKey {
-  return (
-    value === 'policy_recommend' ||
-    value === 'achievement_eval' ||
-    value === 'research_direction'
-  );
+  return value === 'policy_recommend' || value === 'research_direction';
+}
+
+/** Dimension keys from upstream ``event: score``. */
+export const ACHIEVEMENT_EVAL_SCORE_KEYS = [
+  'innovation',
+  'maturity',
+  'market_prospect',
+  'feasibility',
+] as const;
+
+export type AchievementEvalScoreKey =
+  (typeof ACHIEVEMENT_EVAL_SCORE_KEYS)[number];
+
+export const ACHIEVEMENT_EVAL_SCORE_LABELS: Record<
+  AchievementEvalScoreKey,
+  string
+> = {
+  innovation: '创新性',
+  maturity: '成熟度',
+  market_prospect: '市场前景',
+  feasibility: '可行性',
+};
+
+export interface AchievementEvalScoreDim {
+  score?: number;
+  advantage?: string;
+  disadvantage?: string;
+}
+
+/** Raw payload from ``event: score`` (achievement_eval). */
+export interface AchievementEvalScorePayload {
+  innovation?: AchievementEvalScoreDim;
+  maturity?: AchievementEvalScoreDim;
+  market_prospect?: AchievementEvalScoreDim;
+  feasibility?: AchievementEvalScoreDim;
+  total_score?: number;
+  simple_brief?: string;
+}
+
+const DEFAULT_DIM_MAX = 25;
+
+function asFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const n = Number(value.trim());
+    if (Number.isFinite(n)) {
+      return n;
+    }
+  }
+  return null;
+}
+
+function asScoreDim(raw: unknown): AchievementEvalScoreDim | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const dim: AchievementEvalScoreDim = {};
+  const score = asFiniteNumber(record.score);
+  if (score !== null) {
+    dim.score = score;
+  }
+  if (typeof record.advantage === 'string') {
+    dim.advantage = record.advantage;
+  }
+  if (typeof record.disadvantage === 'string') {
+    dim.disadvantage = record.disadvantage;
+  }
+  // Accept dim if any field is present (score / advantage / disadvantage).
+  if (
+    dim.score === undefined &&
+    !dim.advantage?.trim() &&
+    !dim.disadvantage?.trim()
+  ) {
+    return null;
+  }
+  return dim;
+}
+
+/** Map upstream ``event: score`` + summary text into UI result. */
+export function buildAchievementEvalFromScore(
+  payload: Record<string, unknown>,
+  options?: { reason?: string; inputSummary?: string },
+): AchievementEvalResult {
+  const dimensions: AchievementEvalDimension[] = [];
+  for (const key of ACHIEVEMENT_EVAL_SCORE_KEYS) {
+    const dim = asScoreDim(payload[key]);
+    if (!dim) {
+      continue;
+    }
+    dimensions.push({
+      label: ACHIEVEMENT_EVAL_SCORE_LABELS[key],
+      score: typeof dim.score === 'number' ? dim.score : 0,
+      max: DEFAULT_DIM_MAX,
+      highlight: dim.advantage?.trim() ?? '',
+      weakness: dim.disadvantage?.trim() ?? '',
+    });
+  }
+
+  const totalFromPayload = asFiniteNumber(payload.total_score);
+  const total =
+    totalFromPayload ??
+    dimensions.reduce((sum, item) => sum + item.score, 0);
+  const maxTotal =
+    dimensions.length > 0
+      ? dimensions.reduce((sum, item) => sum + item.max, 0)
+      : 100;
+  const title =
+    typeof payload.simple_brief === 'string' && payload.simple_brief.trim()
+      ? payload.simple_brief.trim()
+      : options?.inputSummary?.trim() || '成果评估';
+
+  return {
+    kind: 'achievement_eval',
+    inputSummary: options?.inputSummary?.trim() ?? '',
+    evaluations: [
+      {
+        title,
+        dimensions,
+        total,
+        maxTotal,
+        reason: options?.reason?.trim() ?? '',
+      },
+    ],
+  };
+}
+
+/** Merge streaming summary / reason into an existing eval result. */
+export function patchAchievementEvalReason(
+  result: AchievementEvalResult,
+  reason: string,
+): AchievementEvalResult {
+  if (!result.evaluations.length) {
+    return result;
+  }
+  return {
+    ...result,
+    evaluations: result.evaluations.map((item, index) =>
+      index === 0 ? { ...item, reason } : item,
+    ),
+  };
 }

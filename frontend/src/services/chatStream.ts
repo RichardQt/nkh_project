@@ -21,6 +21,27 @@ interface ChatStreamInput {
   model?: string | null;
 }
 
+export interface SectionStreamPayload {
+  section: string;
+  content: string;
+}
+
+export interface OptimizedQueryPayload {
+  keywords: string[];
+  query: string;
+}
+
+export interface ProgressPayload {
+  message: string;
+}
+
+/** achievement_eval: event web_search hit. */
+export interface WebSearchPayload {
+  title: string;
+  brief: string;
+  url: string;
+}
+
 export interface ChatStreamCallbacks {
   onMeta?: (meta: { sessionId?: string; function?: string; fields?: DisplayField[] }) => void;
   onNodeStart?: (event: WorkflowNodeEvent) => void;
@@ -30,6 +51,16 @@ export interface ChatStreamCallbacks {
   onSuggestedQuestions?: (questions: string[]) => void;
   onToken: (content: string) => void;
   onRelatedEntries: (payload: RelatedEntriesPayload) => void;
+  /** achievement_eval: event optimized_query (keywords). */
+  onOptimizedQuery?: (payload: OptimizedQueryPayload) => void;
+  /** achievement_eval: event section_stream (brief / summary / …). */
+  onSectionStream?: (payload: SectionStreamPayload) => void;
+  /** achievement_eval: event progress (search status text). */
+  onProgress?: (payload: ProgressPayload) => void;
+  /** achievement_eval: event web_search (search hit). */
+  onWebSearch?: (payload: WebSearchPayload) => void;
+  /** achievement_eval: event score (dimension scores). */
+  onScore?: (payload: Record<string, unknown>) => void;
   onComplete: () => void;
   onError: (error: Error) => void;
 }
@@ -460,8 +491,112 @@ function parseWorkflowNodeEvent(data: string): WorkflowNodeEvent | null {
     if (typeof record.optimized_query === 'string') {
       event.optimizedQuery = record.optimized_query;
     }
+    if (Array.isArray(record.keywords)) {
+      const keywords = record.keywords.filter(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0,
+      );
+      if (keywords.length) {
+        event.keywords = keywords;
+      }
+    }
 
     return event;
+  } catch {
+    return null;
+  }
+}
+
+function parseOptimizedQuery(data: string): OptimizedQueryPayload | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+    const keywords: string[] = [];
+    if (Array.isArray(record.keywords)) {
+      for (const item of record.keywords) {
+        if (typeof item === 'string' && item.trim()) {
+          keywords.push(item.trim());
+        }
+      }
+    }
+    const query =
+      typeof record.query === 'string'
+        ? record.query.trim()
+        : keywords.length
+          ? keywords.join('、')
+          : '';
+    if (!keywords.length && !query) {
+      return null;
+    }
+    return { keywords, query };
+  } catch {
+    return null;
+  }
+}
+
+function parseSectionStream(data: string): SectionStreamPayload | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+    const section =
+      typeof record.section === 'string' ? record.section.trim() : '';
+    const content = typeof record.content === 'string' ? record.content : '';
+    if (!section || !content) {
+      return null;
+    }
+    return { section, content };
+  } catch {
+    return null;
+  }
+}
+
+function parseProgress(data: string): ProgressPayload | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+    const message =
+      typeof record.message === 'string' ? record.message.trim() : '';
+    if (!message) {
+      return null;
+    }
+    return { message };
+  } catch {
+    return null;
+  }
+}
+
+function parseWebSearch(data: string): WebSearchPayload | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+    const title = typeof record.title === 'string' ? record.title.trim() : '';
+    const brief = typeof record.brief === 'string' ? record.brief : '';
+    if (!title || !brief.trim()) {
+      return null;
+    }
+    const urlRaw =
+      typeof record.URL === 'string'
+        ? record.URL
+        : typeof record.url === 'string'
+          ? record.url
+          : '';
+    return { title, brief, url: urlRaw.trim() };
+  } catch {
+    return null;
+  }
+}
+
+function parseScorePayload(data: string): Record<string, unknown> | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    return record;
   } catch {
     return null;
   }
@@ -1041,6 +1176,52 @@ export function startChatStream(
           const content = extractContent(frame.data);
           if (content) {
             callbacks.onToken(content);
+          }
+          return true;
+        }
+
+        if (
+          eventName === 'optimized_query' ||
+          eventName === 'optimizedquery'
+        ) {
+          const payload = parseOptimizedQuery(frame.data);
+          if (payload) {
+            callbacks.onOptimizedQuery?.(payload);
+          }
+          return true;
+        }
+
+        if (
+          eventName === 'section_stream' ||
+          eventName === 'sectionstream'
+        ) {
+          const payload = parseSectionStream(frame.data);
+          if (payload) {
+            callbacks.onSectionStream?.(payload);
+          }
+          return true;
+        }
+
+        if (eventName === 'progress') {
+          const payload = parseProgress(frame.data);
+          if (payload) {
+            callbacks.onProgress?.(payload);
+          }
+          return true;
+        }
+
+        if (eventName === 'web_search' || eventName === 'websearch') {
+          const payload = parseWebSearch(frame.data);
+          if (payload) {
+            callbacks.onWebSearch?.(payload);
+          }
+          return true;
+        }
+
+        if (eventName === 'score' || eventName === 'scores') {
+          const payload = parseScorePayload(frame.data);
+          if (payload) {
+            callbacks.onScore?.(payload);
           }
           return true;
         }

@@ -522,8 +522,10 @@ async def stream_chat(
 
     Downstream events: ``meta``, ``node_start``, ``node_end``, optional
     ``clarify``, repeated ``token``, ``related_entries``, ``done``
-    (and optional ``error`` before ``done``). Upstream ``final_answer`` is
-    consumed by Backend A and is not forwarded to the frontend.
+    (and optional ``error`` before ``done``). For ``achievement_eval`` also
+    forwards ``optimized_query``, ``section_stream``, ``progress``, ``web_search``, ``score``.
+    Upstream ``final_answer`` is consumed by Backend A and is not forwarded
+    to the frontend.
 
     Workflow nodes:
 

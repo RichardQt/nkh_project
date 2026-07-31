@@ -26,6 +26,9 @@ export function SearchPreviewPanel({
   reduceMotion,
 }: SearchPreviewPanelProps) {
   const loading = preview.status === 'loading';
+  const statusLabel = loading
+    ? preview.statusHint?.trim() || '检索中'
+    : '已完成';
 
   return (
     <section className={styles.searchPanel} aria-label="搜索引擎结果">
@@ -41,36 +44,53 @@ export function SearchPreviewPanel({
             }`}
             aria-hidden="true"
           />
-          {loading ? '检索中' : '已完成'}
+          {statusLabel}
         </span>
       </div>
 
-      <Typography.Paragraph className={styles.searchQuery}>
-        检索词：{preview.query}
-      </Typography.Paragraph>
+      {loading && preview.statusHint?.trim() ? (
+        <Typography.Paragraph className={styles.searchHint}>
+          {preview.statusHint.trim()}
+        </Typography.Paragraph>
+      ) : null}
+
+      {preview.query ? (
+        <Typography.Paragraph className={styles.searchQuery}>
+          检索词：{preview.query}
+        </Typography.Paragraph>
+      ) : null}
 
       {preview.results.length > 0 ? (
-        <div className={styles.searchList}>
+        <div className={styles.searchDocs}>
           {preview.results.map((item, index) => (
             <article
-              key={`${item.url}-${index}`}
-              className={styles.searchCard}
+              key={`${item.url ?? item.title}-${index}`}
+              className={styles.searchDoc}
             >
               <Typography.Text className={styles.searchCardTitle}>
                 {item.title}
               </Typography.Text>
-              <span className={styles.searchSource}>{item.source}</span>
-              <Typography.Paragraph className={styles.searchSnippet}>
-                {item.snippet}
-              </Typography.Paragraph>
-              <a
-                className={styles.link}
-                href={item.url}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                <LinkOutlined aria-hidden="true" /> {item.url}
-              </a>
+              {item.snippet ? (
+                <div className={styles.searchField}>
+                  <span className={styles.searchFieldLabel}>简介</span>
+                  <div className={styles.searchSnippet}>
+                    <MarkdownContent content={item.snippet} />
+                  </div>
+                </div>
+              ) : null}
+              {item.url ? (
+                <div className={styles.searchField}>
+                  <span className={styles.searchFieldLabel}>链接</span>
+                  <a
+                    className={styles.link}
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    <LinkOutlined aria-hidden="true" /> {item.url}
+                  </a>
+                </div>
+              ) : null}
             </article>
           ))}
         </div>
@@ -434,6 +454,10 @@ function DimensionScoreCard({
 }
 
 function AchievementEvalPanel({ result }: { result: AchievementEvalResult }) {
+  if (!result.evaluations.length) {
+    return null;
+  }
+
   return (
     <div className={styles.panel}>
       {result.evaluations.map((item, index) => (
@@ -462,32 +486,36 @@ function AchievementEvalPanel({ result }: { result: AchievementEvalResult }) {
             </div>
 
             <div className={styles.summaryLayers}>
-              <div className={styles.evalLayerBlock}>
-                <Typography.Text className={styles.summaryLayerLabel}>
-                  评分维度
-                </Typography.Text>
-                <div className={styles.dimensionList}>
-                  {item.dimensions.map((dim, dimIndex) => (
-                    <DimensionScoreCard
-                      key={dim.label}
-                      item={dim}
-                      index={dimIndex}
-                    />
-                  ))}
+              {item.dimensions.length > 0 ? (
+                <div className={styles.evalLayerBlock}>
+                  <Typography.Text className={styles.summaryLayerLabel}>
+                    评分维度
+                  </Typography.Text>
+                  <div className={styles.dimensionList}>
+                    {item.dimensions.map((dim, dimIndex) => (
+                      <DimensionScoreCard
+                        key={dim.label}
+                        item={dim}
+                        index={dimIndex}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
-              <div
-                className={`${styles.recommendReasonCard} ${styles.evalReasonCard}`}
-              >
-                <Typography.Text className={styles.summaryLayerLabel}>
-                  评分原因
-                </Typography.Text>
-                <MarkdownContent
-                  content={item.reason}
-                  className={styles.reasonText}
-                />
-              </div>
+              {item.reason.trim() ? (
+                <div
+                  className={`${styles.recommendReasonCard} ${styles.evalReasonCard}`}
+                >
+                  <Typography.Text className={styles.summaryLayerLabel}>
+                    评分原因
+                  </Typography.Text>
+                  <MarkdownContent
+                    content={item.reason}
+                    className={styles.reasonText}
+                  />
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
