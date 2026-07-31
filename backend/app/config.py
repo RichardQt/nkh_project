@@ -46,6 +46,25 @@ BACKEND_B_STREAM_PATH = _env("BACKEND_B_STREAM_PATH", "/api/chat/stream")
 BACKEND_B_API_KEY = _env("BACKEND_B_API_KEY")
 
 # ---------------------------------------------------------------------------
+# Session logs WebSocket (upstream, typically same host as Backend B)
+# ---------------------------------------------------------------------------
+# Prefer full WS URL; otherwise compose from host + port + path.
+# Frontend appends ?session_id=... when connecting.
+_LOGS_WS = _env("LOGS_WS_URL")
+if _LOGS_WS:
+    LOGS_WS_URL = _LOGS_WS.rstrip("/")
+else:
+    _logs_host = _env("LOGS_WS_HOST") or _env("BACKEND_B_HOST", "192.168.1.111")
+    _logs_port = _env_int(
+        "LOGS_WS_PORT",
+        _env_int("BACKEND_B_PORT", 8001),
+    )
+    _logs_path = _env("LOGS_WS_PATH", "/ws/logs")
+    if not _logs_path.startswith("/"):
+        _logs_path = f"/{_logs_path}"
+    LOGS_WS_URL = f"ws://{_logs_host}:{_logs_port}{_logs_path}"
+
+# ---------------------------------------------------------------------------
 # Optional legacy LLM (general fallback only)
 # ---------------------------------------------------------------------------
 LLM_BASE_URL = _env("LLM_BASE_URL", "http://101.226.11.38:25000/v1").rstrip("/")

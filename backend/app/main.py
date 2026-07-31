@@ -56,7 +56,14 @@ from app.auth_store import (
     get_user_by_username,
     init_auth,
 )
-from app.config import BACKEND_B_API_KEY, BACKEND_B_BASE_URL, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
+from app.config import (
+    BACKEND_B_API_KEY,
+    BACKEND_B_BASE_URL,
+    LLM_API_KEY,
+    LLM_BASE_URL,
+    LLM_MODEL,
+    LOGS_WS_URL,
+)
 from app.conversation_store import (
     delete_conversation,
     get_conversation,
@@ -176,6 +183,7 @@ async def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "backendB": BACKEND_B_BASE_URL,
+        "logsWsUrl": LOGS_WS_URL,
         "modelConfigured": bool(LLM_API_KEY and LLM_BASE_URL),
         "model": LLM_MODEL,
     }

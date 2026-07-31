@@ -10,6 +10,7 @@ import {
   DislikeFilled,
   DislikeOutlined,
   FileDoneOutlined,
+  FileTextOutlined,
   FormOutlined,
   LikeFilled,
   LikeOutlined,
@@ -57,6 +58,11 @@ import {
   saveConversation,
   titleFromMessages,
 } from '../../services/conversationApi';
+import {
+  connectSessionLogs,
+  type SessionLogLine,
+  type SessionLogsConnection,
+} from '../../services/sessionLogs';
 import { startSceneMockStream, startNoDataStream } from '../../services/sceneMockStream';
 import type { AgentKey } from '../../types/agent';
 import type {
@@ -1801,6 +1807,58 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const [feedbackById, setFeedbackById] = useState<
     Record<string, MessageFeedback | undefined>
   >({});
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logLines, setLogLines] = useState<SessionLogLine[]>([]);
+  const [logsStatus, setLogsStatus] = useState<
+    'idle' | 'connecting' | 'open' | 'closed' | 'error'
+  >('idle');
+  const logsConnRef = useRef<SessionLogsConnection | null>(null);
+  const logListRef = useRef<HTMLDivElement | null>(null);
+
+  const closeSessionLogs = useCallback(() => {
+    logsConnRef.current?.close();
+    logsConnRef.current = null;
+  }, []);
+
+  const openSessionLogs = useCallback(() => {
+    const sessionId = sessionIdRef.current?.trim();
+    if (!sessionId) {
+      message.warning('当前会话尚未就绪，无法查看日志');
+      return;
+    }
+    closeSessionLogs();
+    setLogLines([]);
+    setLogsStatus('connecting');
+    setLogsOpen(true);
+    logsConnRef.current = connectSessionLogs({
+      sessionId,
+      onLine: (line) => {
+        setLogLines((prev) => {
+          const next = [...prev, line];
+          return next.length > 500 ? next.slice(-500) : next;
+        });
+      },
+      onStatus: (status) => {
+        setLogsStatus(status);
+      },
+      onError: (msg) => {
+        message.error(msg);
+      },
+    });
+  }, [closeSessionLogs]);
+
+  useEffect(() => {
+    return () => {
+      closeSessionLogs();
+    };
+  }, [closeSessionLogs]);
+
+  useEffect(() => {
+    if (!logsOpen || !logListRef.current) {
+      return;
+    }
+    logListRef.current.scrollTop = logListRef.current.scrollHeight;
+  }, [logLines, logsOpen]);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     createIntroMessage(sessionKey, agentKey),
@@ -3134,6 +3192,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                       <DislikeOutlined aria-label="点踩" />
                     ),
                 },
+                {
+                  key: 'logs',
+                  label: '日志',
+                  icon: <FileTextOutlined aria-label="日志" />,
+                },
               ]}
               onClick={({ key }) => {
                 if (key === 'retry' && message.sourceQuestion) {
@@ -3154,13 +3217,17 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
                     [message.id]:
                       prev[message.id] === 'dislike' ? undefined : 'dislike',
                   }));
+                  return;
+                }
+                if (key === 'logs') {
+                  openSessionLogs();
                 }
               }}
             />
           ) : undefined,
         };
       }),
-    [displayName, feedbackById, messages, submit],
+    [displayName, feedbackById, messages, openSessionLogs, submit],
   );
 
   const publishDock = (
@@ -3212,6 +3279,17 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     );
   }
 
+  const logsStatusLabel =
+    logsStatus === 'connecting'
+      ? '连接中'
+      : logsStatus === 'open'
+        ? '实时'
+        : logsStatus === 'error'
+          ? '连接异常'
+          : logsStatus === 'closed'
+            ? '已断开'
+            : '未连接';
+
   return (
     <main className={styles.page}>
       <section className={styles.conversation} aria-label={`${displayName}对话`}>
@@ -3253,6 +3331,65 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         </footer>
       </section>
       {publishDock}
+
+      <Drawer
+        open={logsOpen}
+        onClose={() => {
+          setLogsOpen(false);
+          closeSessionLogs();
+          setLogsStatus('idle');
+        }}
+        width={440}
+        destroyOnClose
+        className={styles.logsDrawer}
+        title={
+          <div className={styles.logsDrawerTitle}>
+            <span className={styles.logsDrawerName}>会话日志</span>
+            <span
+              className={
+                logsStatus === 'open'
+                  ? styles.logsStatusLive
+                  : styles.logsStatusIdle
+              }
+            >
+              {logsStatusLabel}
+            </span>
+          </div>
+        }
+        extra={
+          <Typography.Text type="secondary" className={styles.logsSessionId}>
+            {sessionIdRef.current}
+          </Typography.Text>
+        }
+      >
+        <div ref={logListRef} className={styles.logsStream} role="log">
+          {logLines.length === 0 ? (
+            <div className={styles.logsEmpty}>
+              <Typography.Text type="secondary">
+                {logsStatus === 'connecting'
+                  ? '正在连接日志流…'
+                  : logsStatus === 'error'
+                    ? '连接失败，请检查后端 LOGS_WS 配置与上游服务'
+                    : '暂无日志输出'}
+              </Typography.Text>
+            </div>
+          ) : (
+            logLines.map((line) => (
+              <div key={line.id} className={styles.logsLine}>
+                <time className={styles.logsTime} dateTime={new Date(line.at).toISOString()}>
+                  {new Date(line.at).toLocaleTimeString('zh-CN', {
+                    hour12: false,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })}
+                </time>
+                <pre className={styles.logsText}>{line.text}</pre>
+              </div>
+            ))
+          )}
+        </div>
+      </Drawer>
     </main>
   );
 }
