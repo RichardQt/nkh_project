@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ComponentRef } from "react";
-import { ArrowUpOutlined } from "@ant-design/icons";
+import { ArrowUpOutlined, DownOutlined } from "@ant-design/icons";
 import { Sender, Welcome } from "@ant-design/x";
-import { Button, Flex, message } from "antd";
+import { Button, Flex, Select, message } from "antd";
 import { motion, useReducedMotion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import AgentGlyph from "../../components/AgentGlyph/AgentGlyph";
@@ -17,6 +17,16 @@ const BRAND = {
 		"连接成果、专家、政策与产业需求，为创新决策提供清晰路径与可执行建议。",
 	placeholder: "描述你的问题或目标，Enter 发送，Shift + Enter 换行",
 } as const;
+
+/** 首页可选对话模型，发起时作为 model 参数透传。 */
+const CHAT_MODELS = [
+	{ value: "DeepSeek-V4", label: "DeepSeek-V4" },
+	{ value: "Qwen3.6-35B", label: "Qwen3.6-35B" },
+] as const;
+
+type ChatModel = (typeof CHAT_MODELS)[number]["value"];
+
+const DEFAULT_CHAT_MODEL: ChatModel = CHAT_MODELS[0].value;
 
 /** 未选模块时的默认推荐问题。 */
 const DEFAULT_SUGGESTED_QUESTIONS = [
@@ -42,6 +52,8 @@ const MODULE_SUGGESTED_QUESTIONS: Record<AgentKey, readonly string[]> = {
 
 export default function HomePage() {
 	const [selectedKey, setSelectedKey] = useState<AgentKey | null>(null);
+	const [selectedModel, setSelectedModel] =
+		useState<ChatModel>(DEFAULT_CHAT_MODEL);
 	const [value, setValue] = useState("");
 	const [composerFocused, setComposerFocused] = useState(false);
 	const senderRef = useRef<ComponentRef<typeof Sender>>(null);
@@ -97,9 +109,14 @@ export default function HomePage() {
 		const params = new URLSearchParams({
 			q: question,
 			sessionId,
+			model: selectedModel,
 		});
 		navigate(`${path}?${params.toString()}`, {
-			state: { initialQuestion: question, sessionId },
+			state: {
+				initialQuestion: question,
+				sessionId,
+				model: selectedModel,
+			},
 		});
 	};
 
@@ -247,12 +264,13 @@ export default function HomePage() {
 							classNames={{
 								input: styles.senderInput,
 								content: styles.senderContent,
+								footer: styles.senderFooter,
 							}}
 							styles={{
 								content: {
 									alignItems: "flex-start",
 									paddingTop: 14,
-									paddingBottom: 14,
+									paddingBottom: 10,
 								},
 								input: {
 									alignSelf: "flex-start",
@@ -262,6 +280,29 @@ export default function HomePage() {
 									minHeight: 78,
 								},
 							}}
+							footer={
+								<div className={styles.modelBar}>
+									<Select
+										value={selectedModel}
+										onChange={(next) => setSelectedModel(next as ChatModel)}
+										options={[...CHAT_MODELS]}
+										className={styles.modelSelect}
+										classNames={{
+											popup: { root: styles.modelSelectPopup },
+										}}
+										variant="borderless"
+										size="small"
+										suffixIcon={
+											<DownOutlined className={styles.modelSelectIcon} />
+										}
+										aria-label="选择模型"
+										popupMatchSelectWidth={false}
+										getPopupContainer={(node) =>
+											node.parentElement ?? document.body
+										}
+									/>
+								</div>
+							}
 							suffix={(_, { components }) => {
 								const { SendButton } = components;
 								return (

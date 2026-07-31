@@ -206,6 +206,73 @@
   margin-top: 0 !important;
 }
 
+/* Sender footer: model picker only (send stays in suffix) */
+.senderFooter {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0 14px 12px 14px;
+  box-sizing: border-box;
+}
+
+.modelBar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.modelSelect {
+  min-width: 140px;
+  max-width: 200px;
+}
+
+.modelSelect :global(.ant-select-selector) {
+  height: 30px !important;
+  padding-inline: 10px 8px !important;
+  border-radius: 999px !important;
+  background: var(--surface-muted) !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  transition:
+    background 160ms var(--ease-out),
+    border-color 160ms var(--ease-out) !important;
+}
+
+.modelSelect:hover :global(.ant-select-selector) {
+  background: var(--primary-soft) !important;
+  border-color: rgba(43, 92, 255, 0.16) !important;
+}
+
+.modelSelect :global(.ant-select-selection-item) {
+  color: var(--text) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 28px !important;
+}
+
+.modelSelectIcon {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.modelSelectPopup {
+  border-radius: 10px !important;
+  padding: 4px !important;
+}
+
+.modelSelectPopup :global(.ant-select-item) {
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.modelSelectPopup :global(.ant-select-item-option-selected) {
+  color: var(--primary);
+  font-weight: 600;
+  background: var(--primary-soft) !important;
+}
+
 .sender:focus-within {
   border-color: rgba(43, 92, 255, 0.35) !important;
   box-shadow:

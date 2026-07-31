@@ -242,6 +242,7 @@ async def stream_from_backend_b(
     session_id: str,
     function: str | None,
     request: Request,
+    model: str | None = None,
 ) -> AsyncIterator[str]:
     """Proxy Backend B SSE (POST JSON body), projecting related_entries fields.
 
@@ -250,7 +251,7 @@ async def stream_from_backend_b(
         POST {base}/api/chat/stream
         Content-Type: application/json
         Accept: text/event-stream
-        {"query": "...", "session_id": "1", "function": "achievements"}
+        {"query": "...", "session_id": "1", "function": "achievements", "model": "..."}
 
     When no scene is selected, ``function`` is omitted (empty).
     """
@@ -265,6 +266,7 @@ async def stream_from_backend_b(
             "fields": fields,
             "detailFields": detail_fields,
             "upstream": BACKEND_B_BASE_URL,
+            **({"model": model} if model else {}),
         },
     )
 
@@ -276,6 +278,8 @@ async def stream_from_backend_b(
     # 未选中场景不传 function，避免上游按默认 achievements 处理
     if function:
         body["function"] = function
+    if model:
+        body["model"] = model
     headers: dict[str, str] = {
         "Accept": "text/event-stream",
         "Content-Type": "application/json",

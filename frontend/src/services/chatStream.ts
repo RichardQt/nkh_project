@@ -17,6 +17,8 @@ interface ChatStreamInput {
   agentKey?: ChatAgentKey;
   message: string;
   sessionId: string;
+  /** Optional chat model id, e.g. DeepSeek-V4 / Qwen3.6-35B */
+  model?: string | null;
 }
 
 export interface ChatStreamCallbacks {
@@ -956,6 +958,7 @@ export function startChatStream(
           message: input.message,
           agentKey: normalizeAgentKey(input.agentKey),
           sessionId: input.sessionId,
+          ...(input.model?.trim() ? { model: input.model.trim() } : {}),
         }),
         signal: controller.signal,
       });

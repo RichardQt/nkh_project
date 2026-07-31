@@ -510,13 +510,14 @@ async def stream_chat(
     Accepts either frontend body or the same body as Backend B::
 
         # 前端
-        {"message": "...", "agentKey": "achievement_discover", "sessionId": "1"}
+        {"message": "...", "agentKey": "achievement_discover", "sessionId": "1", "model": "DeepSeek-V4"}
 
         # 与上游一致（直接透传字段）
         {
           "query": "自凝胶止血粉的完成人是谁",
           "session_id": "1",
-          "function": "achievements"
+          "function": "achievements",
+          "model": "DeepSeek-V4"
         }
 
     Downstream events: ``meta``, ``node_start``, ``node_end``, optional
@@ -579,12 +580,21 @@ async def stream_chat(
                 detail=f"未知场景 agentKey={agent_key!r}，无法映射 function",
             )
 
+    # 可选模型：前端首页选择，透传上游
+    model: str | None = None
+    raw_model = body.get("model")
+    if isinstance(raw_model, str) and raw_model.strip():
+        model = raw_model.strip()
+        if len(model) > 128:
+            raise HTTPException(status_code=422, detail="model 过长")
+
     return StreamingResponse(
         stream_from_backend_b(
             query=raw_query.strip(),
             session_id=session_id,
             function=function,
             request=request,
+            model=model,
         ),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,

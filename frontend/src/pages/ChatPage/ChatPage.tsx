@@ -86,6 +86,8 @@ interface ChatLocationState {
   initialQuestion?: string;
   /** 首页每次发起对话下发的唯一后端 session id */
   sessionId?: string;
+  /** 首页选择的对话模型 */
+  model?: string;
 }
 
 interface ChatPageProps {
@@ -153,6 +155,23 @@ function readSessionIdFromState(state: unknown): string {
     return '';
   }
   return String((state as ChatLocationState).sessionId ?? '').trim();
+}
+
+function readModelFromState(state: unknown): string {
+  if (!state || typeof state !== 'object') {
+    return '';
+  }
+  return String((state as ChatLocationState).model ?? '').trim();
+}
+
+/** Resolve chat model from home navigate state / URL `model` query. */
+function resolveChatModel(search: string, state?: unknown): string | null {
+  const fromState = readModelFromState(state);
+  if (fromState) {
+    return fromState;
+  }
+  const fromQuery = new URLSearchParams(search).get('model')?.trim() ?? '';
+  return fromQuery || null;
 }
 
 /**
@@ -1768,6 +1787,10 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const sessionIdRef = useRef(
     resolveSessionId(sessionKey, location.search, location.state),
   );
+  /** Model chosen on home (or URL); kept for the whole conversation. */
+  const modelRef = useRef<string | null>(
+    resolveChatModel(location.search, location.state),
+  );
   // Bound conversation id (set on first send or after history restore).
   const conversationIdRef = useRef<string | null>(null);
   /** Last conversation id whose messages are already in React state. */
@@ -1799,6 +1822,14 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       location.state,
     );
   }, [location.search, location.state, sessionKey]);
+
+  // 首页选择的模型：URL/state 有值时写入 ref
+  useEffect(() => {
+    const next = resolveChatModel(location.search, location.state);
+    if (next) {
+      modelRef.current = next;
+    }
+  }, [location.search, location.state]);
   const reduceMotion = useReducedMotion();
   const [value, setValue] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
@@ -2479,6 +2510,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           agentKey,
           message: question,
           sessionId: sessionIdRef.current,
+          model: modelRef.current,
         },
         {
           onMeta: ({ fields }) => {
@@ -2768,10 +2800,18 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     const started = submit(question);
 
     if (started) {
-      // keep cid if submit already wrote it; only strip entry q
+      // keep cid if submit already wrote it; strip entry q / model from URL
       const params = new URLSearchParams(window.location.search);
+      let dirty = false;
       if (params.has('q')) {
         params.delete('q');
+        dirty = true;
+      }
+      if (params.has('model')) {
+        params.delete('model');
+        dirty = true;
+      }
+      if (dirty) {
         const nextSearch = params.toString();
         window.history.replaceState(
           null,
