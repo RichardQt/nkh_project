@@ -7,17 +7,45 @@
   padding-top: 4px;
 }
 
-.header {
+.sectionToggle {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
   flex: 0 0 auto;
-  padding: 0 4px;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 6px;
+  color: var(--text-tertiary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+
+.sectionToggle:hover {
+  color: var(--text-secondary);
+  background: var(--surface-muted);
 }
 
 .headerTitle {
-  color: var(--text-tertiary) !important;
+  min-width: 0;
+  flex: 1;
+  color: inherit !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   letter-spacing: 0.04em;
   line-height: 1.4 !important;
+}
+
+.sectionBody {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .loading {
@@ -58,20 +86,67 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .group:last-child {
   margin-bottom: 4px;
 }
 
+.groupToggle {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 6px;
+  color: var(--text-tertiary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+
+.groupToggle:hover {
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+}
+
+.groupToggleIcon {
+  display: inline-flex;
+  width: 14px;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
 .groupLabel {
-  padding: 2px 8px 4px;
-  color: var(--text-tertiary) !important;
+  min-width: 0;
+  flex: 1;
+  padding: 0 !important;
+  color: inherit !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   letter-spacing: 0.02em;
   line-height: 1.4 !important;
+}
+
+.groupCount {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 5px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  background: var(--surface-muted);
+  border-radius: 999px;
 }
 
 .list {

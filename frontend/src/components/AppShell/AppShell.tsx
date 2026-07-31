@@ -8,6 +8,7 @@ import {
   MenuOutlined,
   RobotOutlined,
   ShareAltOutlined,
+  StopOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Button, Divider, Drawer, Layout, Modal, Typography } from 'antd';
@@ -26,6 +27,7 @@ interface SidebarPanelProps {
   activeConversationId: string | null;
   showKnowledgeBase: boolean;
   showModelConfig: boolean;
+  showSensitiveWords: boolean;
   username: string;
   roleLabel: string;
   onNavigate: (path: string) => void;
@@ -39,6 +41,7 @@ function SidebarPanel({
   activeConversationId,
   showKnowledgeBase,
   showModelConfig,
+  showSensitiveWords,
   username,
   roleLabel,
   onNavigate,
@@ -62,6 +65,9 @@ function SidebarPanel({
   const modelConfigActive =
     activePath === '/model-config' ||
     activePath.startsWith('/model-config/');
+  const sensitiveWordsActive =
+    activePath === '/sensitive-words' ||
+    activePath.startsWith('/sensitive-words/');
 
   return (
     <div className={styles.sidebarPanel}>
@@ -159,6 +165,20 @@ function SidebarPanel({
             模型配置
           </Button>
         ) : null}
+
+        {showSensitiveWords ? (
+          <Button
+            type="default"
+            icon={<StopOutlined />}
+            size="large"
+            block
+            className={`${styles.navEntryButton} ${sensitiveWordsActive ? styles.navEntryButtonActive : ''}`}
+            onClick={() => onNavigate('/sensitive-words')}
+            aria-current={sensitiveWordsActive ? 'page' : undefined}
+          >
+            敏感词
+          </Button>
+        ) : null}
       </nav>
 
       <Divider className={styles.sidebarDivider} />
@@ -210,6 +230,7 @@ export default function AppShell() {
   // History only on chat detail pages (/chat, /chat/:agentKey), not home or agents.
   const showKnowledgeBase = user?.role === 'admin';
   const showModelConfig = user?.role === 'admin';
+  const showSensitiveWords = user?.role === 'admin';
   const username = user?.username ?? '';
   const roleLabel = user?.role === 'admin' ? '管理员' : '普通用户';
 
@@ -279,6 +300,7 @@ export default function AppShell() {
     activeConversationId,
     showKnowledgeBase,
     showModelConfig,
+    showSensitiveWords,
     username,
     roleLabel,
     onNavigate: handleNavigate,

@@ -26,13 +26,14 @@ import type {
   BubbleListProps,
   ThoughtChainProps,
 } from '@ant-design/x';
-import { Drawer, Empty, List, Spin, Typography } from 'antd';
+import { Drawer, Empty, List, Spin, Typography, message } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import HotspotBar from '../../components/HotspotBar/HotspotBar';
 import { KnowledgeGraphModal } from '../../components/KnowledgeGraph/KnowledgeGraphModal';
 import { MarkdownContent } from '../../components/MarkdownContent/MarkdownContent';
 import { useChatStream } from '../../context/ChatStreamContext';
+import { useSensitiveWords } from '../../context/SensitiveWordsContext';
 import {
   SceneResultPanel,
   SearchPreviewPanel,
@@ -1686,6 +1687,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   const displayName = scene ? `${CHAT_UI.name} · ${scene.label}` : CHAT_UI.name;
   const location = useLocation();
   const navigate = useNavigate();
+  const { match: matchSensitive, blockMessage } = useSensitiveWords();
   const routeConversationId = readConversationIdFromSearch(location.search);
   const sessionIdRef = useRef(
     resolveSessionId(sessionKey, location.search, location.state),
@@ -2521,6 +2523,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         return false;
       }
 
+      if (matchSensitive(question)) {
+        message.warning(blockMessage);
+        return false;
+      }
+
       const userId = nextMessageId('user');
       const answerId = nextMessageId('assistant');
       const conversationId = ensureConversationId();
@@ -2561,7 +2568,9 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     },
     [
       beginStream,
+      blockMessage,
       ensureConversationId,
+      matchSensitive,
       nextMessageId,
       schedulePersist,
       syncConversationIdToUrl,
@@ -2576,6 +2585,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     (answerId: string, rawQuestion: string) => {
       const question = rawQuestion.trim();
       if (!question || isRequestingRef.current || activeAnswerRef.current) {
+        return false;
+      }
+
+      if (matchSensitive(question)) {
+        message.warning(blockMessage);
         return false;
       }
 
@@ -2605,7 +2619,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       beginStream(answerId, turnId, question);
       return true;
     },
-    [beginStream, nextMessageId, schedulePersist],
+    [beginStream, blockMessage, matchSensitive, nextMessageId, schedulePersist],
   );
 
   useEffect(() => {

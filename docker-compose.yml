@@ -22,6 +22,8 @@ services:
       - ./data:/workspace/backend/data
       # 热点 Excel：容器内路径对应 hotspot_store 的 /workspace/英文字段.xlsx
       - ./英文字段.xlsx:/workspace/英文字段.xlsx:ro
+      # 敏感词 Excel：表空时 seed 到 SQLite（sensitive_word_store）
+      - ./sensitiveword.xlsx:/workspace/sensitiveword.xlsx:ro
     healthcheck:
       test:
         [

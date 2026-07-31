@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  CaretDownOutlined,
+  CaretRightOutlined,
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
@@ -22,7 +24,10 @@ import {
   listConversations,
   renameConversation,
 } from '../../services/conversationApi';
-import type { ConversationSummary } from '../../types/conversation';
+import type {
+  ConversationSummary,
+  HistoryGroupKey,
+} from '../../types/conversation';
 import styles from './ConversationHistory.module.css';
 
 interface ConversationHistoryProps {
@@ -31,6 +36,13 @@ interface ConversationHistoryProps {
   /** Called after a conversation is deleted (e.g. leave the page if it was active). */
   onDeleted?: (id: string) => void;
 }
+
+/** Default: expand today; collapse yesterday / earlier to free sidebar space. */
+const DEFAULT_COLLAPSED: Record<HistoryGroupKey, boolean> = {
+  today: false,
+  yesterday: true,
+  earlier: true,
+};
 
 export default function ConversationHistory({
   activeConversationId,
@@ -41,6 +53,8 @@ export default function ConversationHistory({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [sectionCollapsed, setSectionCollapsed] = useState(false);
+  const [collapsedByKey, setCollapsedByKey] = useState(DEFAULT_COLLAPSED);
 
   const [renameTarget, setRenameTarget] = useState<ConversationSummary | null>(
     null,
@@ -80,6 +94,34 @@ export default function ConversationHistory({
   }, [load]);
 
   const groups = useMemo(() => groupConversationsByRecency(items), [items]);
+
+  // Keep the section and group that hold the active conversation expanded.
+  useEffect(() => {
+    if (!activeConversationId) {
+      return;
+    }
+    const activeGroup = groups.find((group) =>
+      group.items.some((item) => item.id === activeConversationId),
+    );
+    if (!activeGroup) {
+      return;
+    }
+    setSectionCollapsed(false);
+    setCollapsedByKey((prev) => {
+      if (!prev[activeGroup.key]) {
+        return prev;
+      }
+      return { ...prev, [activeGroup.key]: false };
+    });
+  }, [activeConversationId, groups]);
+
+  const toggleSection = useCallback(() => {
+    setSectionCollapsed((prev) => !prev);
+  }, []);
+
+  const toggleGroup = useCallback((key: HistoryGroupKey) => {
+    setCollapsedByKey((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   const openRename = useCallback((item: ConversationSummary) => {
     setMenuOpenId(null);
@@ -170,92 +212,145 @@ export default function ConversationHistory({
   if (loading && items.length === 0) {
     return (
       <div className={styles.root} aria-label="历史对话">
-        <div className={styles.header}>
+        <button
+          type="button"
+          className={styles.sectionToggle}
+          onClick={toggleSection}
+          aria-expanded={!sectionCollapsed}
+          aria-controls="history-section-panel"
+        >
+          <span className={styles.groupToggleIcon} aria-hidden="true">
+            {sectionCollapsed ? <CaretRightOutlined /> : <CaretDownOutlined />}
+          </span>
           <Typography.Text className={styles.headerTitle}>
             历史对话
           </Typography.Text>
-        </div>
-        <div className={styles.loading}>
-          <Spin size="small" />
-        </div>
+        </button>
+        {!sectionCollapsed ? (
+          <div id="history-section-panel" className={styles.loading}>
+            <Spin size="small" />
+          </div>
+        ) : null}
       </div>
     );
   }
 
   return (
     <div className={styles.root} aria-label="历史对话">
-      <div className={styles.header}>
+      <button
+        type="button"
+        className={styles.sectionToggle}
+        onClick={toggleSection}
+        aria-expanded={!sectionCollapsed}
+        aria-controls="history-section-panel"
+      >
+        <span className={styles.groupToggleIcon} aria-hidden="true">
+          {sectionCollapsed ? <CaretRightOutlined /> : <CaretDownOutlined />}
+        </span>
         <Typography.Text className={styles.headerTitle}>历史对话</Typography.Text>
-      </div>
+        {items.length > 0 ? (
+          <span className={styles.groupCount}>{items.length}</span>
+        ) : null}
+      </button>
 
-      {error ? (
-        <Typography.Text type="danger" className={styles.errorText}>
-          {error}
-        </Typography.Text>
-      ) : null}
-
-      {!error && groups.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="暂无历史对话"
-          className={styles.empty}
-        />
-      ) : null}
-
-      <div className={styles.scroll}>
-        {groups.map((group) => (
-          <section key={group.key} className={styles.group}>
-            <Typography.Text className={styles.groupLabel}>
-              {group.label}
+      {!sectionCollapsed ? (
+        <div id="history-section-panel" className={styles.sectionBody}>
+          {error ? (
+            <Typography.Text type="danger" className={styles.errorText}>
+              {error}
             </Typography.Text>
-            <ul className={styles.list}>
-              {group.items.map((item) => {
-                const active = item.id === activeConversationId;
-                const menuOpen = menuOpenId === item.id;
-                return (
-                  <li key={item.id}>
-                    <div
-                      className={`${styles.itemRow} ${active ? styles.itemRowActive : ''} ${menuOpen ? styles.itemRowMenuOpen : ''}`}
-                    >
-                      <button
-                        type="button"
-                        className={styles.itemMain}
-                        onClick={() => onSelect(item)}
-                        title={item.title}
-                        aria-current={active ? 'page' : undefined}
-                        data-path={conversationPath(item)}
-                      >
-                        <span className={styles.itemTitle}>{item.title}</span>
-                      </button>
+          ) : null}
 
-                      <Dropdown
-                        menu={{ items: menuItemsFor(item) }}
-                        trigger={['click']}
-                        placement="bottomRight"
-                        open={menuOpen}
-                        onOpenChange={(open) => {
-                          setMenuOpenId(open ? item.id : null);
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className={styles.moreButton}
-                          aria-label={`更多操作：${item.title}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                          }}
-                        >
-                          <MoreOutlined />
-                        </button>
-                      </Dropdown>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))}
-      </div>
+          {!error && groups.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无历史对话"
+              className={styles.empty}
+            />
+          ) : null}
+
+          <div className={styles.scroll}>
+            {groups.map((group) => {
+              const collapsed = collapsedByKey[group.key];
+              const panelId = `history-group-${group.key}`;
+              return (
+                <section key={group.key} className={styles.group}>
+                  <button
+                    type="button"
+                    className={styles.groupToggle}
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={!collapsed}
+                    aria-controls={panelId}
+                  >
+                    <span className={styles.groupToggleIcon} aria-hidden="true">
+                      {collapsed ? (
+                        <CaretRightOutlined />
+                      ) : (
+                        <CaretDownOutlined />
+                      )}
+                    </span>
+                    <Typography.Text className={styles.groupLabel}>
+                      {group.label}
+                    </Typography.Text>
+                    <span className={styles.groupCount}>
+                      {group.items.length}
+                    </span>
+                  </button>
+                  {!collapsed ? (
+                    <ul id={panelId} className={styles.list}>
+                      {group.items.map((item) => {
+                        const active = item.id === activeConversationId;
+                        const menuOpen = menuOpenId === item.id;
+                        return (
+                          <li key={item.id}>
+                            <div
+                              className={`${styles.itemRow} ${active ? styles.itemRowActive : ''} ${menuOpen ? styles.itemRowMenuOpen : ''}`}
+                            >
+                              <button
+                                type="button"
+                                className={styles.itemMain}
+                                onClick={() => onSelect(item)}
+                                title={item.title}
+                                aria-current={active ? 'page' : undefined}
+                                data-path={conversationPath(item)}
+                              >
+                                <span className={styles.itemTitle}>
+                                  {item.title}
+                                </span>
+                              </button>
+
+                              <Dropdown
+                                menu={{ items: menuItemsFor(item) }}
+                                trigger={['click']}
+                                placement="bottomRight"
+                                open={menuOpen}
+                                onOpenChange={(open) => {
+                                  setMenuOpenId(open ? item.id : null);
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className={styles.moreButton}
+                                  aria-label={`更多操作：${item.title}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                  }}
+                                >
+                                  <MoreOutlined />
+                                </button>
+                              </Dropdown>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <Modal
         title="重命名对话"

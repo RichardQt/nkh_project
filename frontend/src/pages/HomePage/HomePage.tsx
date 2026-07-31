@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { ComponentRef } from "react";
 import { ArrowUpOutlined } from "@ant-design/icons";
 import { Sender, Welcome } from "@ant-design/x";
-import { Button, Flex } from "antd";
+import { Button, Flex, message } from "antd";
 import { motion, useReducedMotion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import AgentGlyph from "../../components/AgentGlyph/AgentGlyph";
+import { useSensitiveWords } from "../../context/SensitiveWordsContext";
 import { agents, homeNavBottomKeys, homeNavTopKeys } from "../../data/agents";
 import { easeOut } from "../../motion/tokens";
 import type { AgentDefinition, AgentKey } from "../../types/agent";
@@ -48,6 +49,7 @@ export default function HomePage() {
 	const blurTimerRef = useRef<number | null>(null);
 	const reduceMotion = useReducedMotion();
 	const navigate = useNavigate();
+	const { match: matchSensitive, blockMessage } = useSensitiveWords();
 
 	const agentsByKey = new Map(agents.map((item) => [item.key, item]));
 	const topItems = homeNavTopKeys
@@ -70,10 +72,15 @@ export default function HomePage() {
 		setSelectedKey((current) => (current === key ? null : key));
 	};
 
-	const submit = (message: string) => {
-		const question = message.trim();
+	const submit = (rawMessage: string) => {
+		const question = rawMessage.trim();
 		if (!question) {
 			senderRef.current?.focus();
+			return;
+		}
+
+		if (matchSensitive(question)) {
+			message.warning(blockMessage);
 			return;
 		}
 

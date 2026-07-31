@@ -22,6 +22,9 @@ const KnowledgeBasePage = lazy(
 const ModelConfigPage = lazy(
   () => import('./pages/ModelConfigPage/ModelConfigPage'),
 );
+const SensitiveWordsPage = lazy(
+  () => import('./pages/SensitiveWordsPage/SensitiveWordsPage'),
+);
 const LoginPage = lazy(() => import('./pages/LoginPage/LoginPage'));
 
 function PageBoundary({ children }: { children: ReactNode }) {
@@ -122,6 +125,16 @@ export default function App() {
               <PageBoundary>
                 <RequireAdmin>
                   <ModelConfigPage />
+                </RequireAdmin>
+              </PageBoundary>
+            }
+          />
+          <Route
+            path="sensitive-words"
+            element={
+              <PageBoundary>
+                <RequireAdmin>
+                  <SensitiveWordsPage />
                 </RequireAdmin>
               </PageBoundary>
             }

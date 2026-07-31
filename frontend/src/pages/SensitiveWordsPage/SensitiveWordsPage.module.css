@@ -1,0 +1,158 @@
+.page {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: var(--canvas);
+  background-image: url('../../../assests/bj.png');
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(100%, 1120px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(24px, 4vh, 40px) 20px 40px;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.headerCopy {
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.title {
+  margin: 0 !important;
+  color: var(--text) !important;
+  font-size: clamp(22px, 2.2vw, 28px) !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.2 !important;
+}
+
+.subtitle {
+  max-width: 42rem;
+  margin: 8px 0 0 !important;
+  color: var(--text-secondary) !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+
+.searchInput {
+  width: min(100%, 280px);
+}
+
+.categorySelect {
+  width: min(100%, 220px);
+}
+
+.card {
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+
+.tableWrap {
+  width: 100%;
+}
+
+.tableWrap :global(.ant-table-thead > tr > th) {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+  background: var(--surface-muted) !important;
+}
+
+.tableWrap :global(.ant-table-tbody > tr > td) {
+  vertical-align: middle;
+}
+
+.tableWrap :global(.ant-table-tbody > tr:hover > td) {
+  background: var(--primary-soft) !important;
+}
+
+.wordCellRow {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.wordCell {
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.revealButton {
+  flex: 0 0 auto;
+  width: 28px !important;
+  height: 28px !important;
+  color: var(--text-tertiary) !important;
+}
+
+.revealButton:hover {
+  color: var(--primary) !important;
+  background: var(--primary-soft) !important;
+}
+
+.metaCell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.loadingWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 40px 16px;
+}

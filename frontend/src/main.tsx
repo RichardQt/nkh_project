@@ -8,6 +8,7 @@ import '@fontsource-variable/outfit/wght.css';
 import 'antd/dist/reset.css';
 import App from './App';
 import { AuthProvider } from './auth/AuthContext';
+import { SensitiveWordsProvider } from './context/SensitiveWordsContext';
 import './styles/global.css';
 
 const root = document.getElementById('root');
@@ -60,7 +61,9 @@ createRoot(root).render(
   >
     <BrowserRouter>
       <AuthProvider>
-        <App />
+        <SensitiveWordsProvider>
+          <App />
+        </SensitiveWordsProvider>
       </AuthProvider>
     </BrowserRouter>
   </XProvider>,

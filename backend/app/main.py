@@ -81,6 +81,15 @@ from app.model_config_store import (
     test_model_config,
 )
 from app.proxy_stream import stream_from_backend_b
+from app.sensitive_word_store import (
+    create_sensitive_word,
+    delete_sensitive_word,
+    init_sensitive_words,
+    list_active_words,
+    list_categories,
+    list_sensitive_words,
+    update_sensitive_word,
+)
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -123,6 +132,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
     init_auth()
     init_model_config()
+    init_sensitive_words()
     admin = get_user_by_username("admin")
     if admin is not None:
         migrate_orphan_conversations(admin["id"])
@@ -631,6 +641,107 @@ async def api_test_model_config(
         return await test_model_config(kind)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Sensitive words (admin CRUD + login user word list for client matching)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/sensitive-words")
+def api_list_active_sensitive_words(
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Full word list for client-side send interception."""
+
+    return {"words": list_active_words()}
+
+
+@app.get("/api/admin/sensitive-words")
+def api_admin_list_sensitive_words(
+    q: str = "",
+    category: str = "",
+    page: int = 1,
+    pageSize: int = 20,
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Paginated admin list with keyword / category filters."""
+
+    return list_sensitive_words(
+        q=q,
+        category=category,
+        page=page,
+        page_size=pageSize,
+    )
+
+
+@app.get("/api/admin/sensitive-words/categories")
+def api_admin_sensitive_word_categories(
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Distinct categories for the admin filter dropdown."""
+
+    return {"categories": list_categories()}
+
+
+@app.post("/api/admin/sensitive-words")
+async def api_admin_create_sensitive_word(
+    request: Request,
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Create a sensitive word."""
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    try:
+        return create_sensitive_word(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.put("/api/admin/sensitive-words/{word_id}")
+async def api_admin_update_sensitive_word(
+    word_id: str,
+    request: Request,
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Update a sensitive word."""
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    try:
+        return update_sensitive_word(word_id, body)
+    except ValueError as exc:
+        detail = str(exc)
+        status = 404 if detail == "敏感词不存在" else 422
+        raise HTTPException(status_code=status, detail=detail) from exc
+
+
+@app.delete("/api/admin/sensitive-words/{word_id}")
+def api_admin_delete_sensitive_word(
+    word_id: str,
+    _admin: dict[str, Any] = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Delete a sensitive word."""
+
+    try:
+        return delete_sensitive_word(word_id)
+    except ValueError as exc:
+        detail = str(exc)
+        status = 404 if detail == "敏感词不存在" else 422
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 
 if __name__ == "__main__":
