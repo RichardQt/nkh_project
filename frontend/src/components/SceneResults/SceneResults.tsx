@@ -323,7 +323,7 @@ function PolicyRecommendPanel({ result }: { result: PolicyRecommendResult }) {
         <section className={styles.section} aria-label="推荐理由">
           <div className={styles.recommendReasonCard}>
             <Typography.Text className={styles.summaryLayerLabel}>
-              推荐理由
+              申报建议
             </Typography.Text>
             <MarkdownContent
               content={result.recommendReason}
@@ -481,7 +481,7 @@ function AchievementEvalPanel({ result }: { result: AchievementEvalResult }) {
                 className={`${styles.recommendReasonCard} ${styles.evalReasonCard}`}
               >
                 <Typography.Text className={styles.summaryLayerLabel}>
-                  推荐原因
+                  评分原因
                 </Typography.Text>
                 <MarkdownContent
                   content={item.reason}
