@@ -194,31 +194,31 @@
   display: flex !important;
   align-items: flex-start !important;
   gap: 10px !important;
-  min-height: 96px !important;
-  padding: 14px 14px 14px 18px !important;
+  min-height: 78px !important;
+  padding: 14px 18px 4px 18px !important;
   box-sizing: border-box !important;
 }
 
 .sender:global(.ant-sender) :global(.ant-sender-actions-list),
 .sender :global(.ant-sender-actions-list) {
-  flex: none !important;
-  align-self: flex-end !important;
-  margin-top: 0 !important;
+  display: none !important;
 }
 
-/* Sender footer: model picker only (send stays in suffix) */
+/* Footer toolbar: model left, send right, same row */
 .senderFooter {
   display: flex;
-  align-items: center;
   width: 100%;
-  padding: 0 14px 12px 14px;
+  padding: 4px 12px 12px 12px;
   box-sizing: border-box;
 }
 
-.modelBar {
+.composerToolbar {
   display: flex;
+  width: 100%;
   align-items: center;
-  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
 }
 
 .modelSelect {

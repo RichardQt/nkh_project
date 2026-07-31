@@ -270,7 +270,7 @@ export default function HomePage() {
 								content: {
 									alignItems: "flex-start",
 									paddingTop: 14,
-									paddingBottom: 10,
+									paddingBottom: 4,
 								},
 								input: {
 									alignSelf: "flex-start",
@@ -280,41 +280,42 @@ export default function HomePage() {
 									minHeight: 78,
 								},
 							}}
-							footer={
-								<div className={styles.modelBar}>
-									<Select
-										value={selectedModel}
-										onChange={(next) => setSelectedModel(next as ChatModel)}
-										options={[...CHAT_MODELS]}
-										className={styles.modelSelect}
-										classNames={{
-											popup: { root: styles.modelSelectPopup },
-										}}
-										variant="borderless"
-										size="small"
-										suffixIcon={
-											<DownOutlined className={styles.modelSelectIcon} />
-										}
-										aria-label="选择模型"
-										popupMatchSelectWidth={false}
-										getPopupContainer={(node) =>
-											node.parentElement ?? document.body
-										}
-									/>
-								</div>
-							}
-							suffix={(_, { components }) => {
+							footer={(_, { components }) => {
 								const { SendButton } = components;
 								return (
-									<SendButton
-										type="primary"
-										shape="circle"
-										icon={<ArrowUpOutlined />}
-										disabled={!value.trim()}
-										aria-label="发送问题"
-									/>
+									<div className={styles.composerToolbar}>
+										<Select
+											value={selectedModel}
+											onChange={(next) =>
+												setSelectedModel(next as ChatModel)
+											}
+											options={[...CHAT_MODELS]}
+											className={styles.modelSelect}
+											classNames={{
+												popup: { root: styles.modelSelectPopup },
+											}}
+											variant="borderless"
+											size="small"
+											suffixIcon={
+												<DownOutlined className={styles.modelSelectIcon} />
+											}
+											aria-label="选择模型"
+											popupMatchSelectWidth={false}
+											getPopupContainer={(node) =>
+												node.parentElement ?? document.body
+											}
+										/>
+										<SendButton
+											type="primary"
+											shape="circle"
+											icon={<ArrowUpOutlined />}
+											disabled={!value.trim()}
+											aria-label="发送问题"
+										/>
+									</div>
 								);
 							}}
+							suffix={false}
 						/>
 
 						{showSuggestions ? (

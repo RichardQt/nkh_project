@@ -162,7 +162,7 @@ export default function KnowledgeBasePage() {
               知识库设置
             </Typography.Title>
             <Typography.Paragraph className={styles.subtitle}>
-              浏览各领域知识条目（演示数据）。新增与上传为预览操作，暂不写入后端。
+              浏览各领域知识条目。
             </Typography.Paragraph>
           </div>
         </motion.header>
