@@ -9,6 +9,8 @@ import type { ComponentRef, ReactNode } from 'react';
 import {
   DislikeFilled,
   DislikeOutlined,
+  FileDoneOutlined,
+  FormOutlined,
   LikeFilled,
   LikeOutlined,
   RedoOutlined,
@@ -26,7 +28,7 @@ import type {
   BubbleListProps,
   ThoughtChainProps,
 } from '@ant-design/x';
-import { Drawer, Empty, List, Spin, Typography, message } from 'antd';
+import { Button, Drawer, Empty, List, Modal, Spin, Typography, message } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import HotspotBar from '../../components/HotspotBar/HotspotBar';
@@ -1175,6 +1177,15 @@ function EntrySectionList({
   );
 }
 
+const INTERVIEW_APPLY_LIST_KEYS = new Set([
+  'achievements',
+  'achievement',
+  'requirements',
+  'requirement',
+  'demands',
+  'demand',
+]);
+
 function RelatedEntriesList({
   payload,
   title = '相关结果',
@@ -1184,6 +1195,7 @@ function RelatedEntriesList({
 }) {
   const [detail, setDetail] = useState<EntryDetailState | null>(null);
   const [kgTarget, setKgTarget] = useState<KgQueryTarget | null>(null);
+  const [interviewModalOpen, setInterviewModalOpen] = useState(false);
 
   const sections: RelatedEntriesSection[] =
     payload.sections && payload.sections.length > 0
@@ -1283,10 +1295,25 @@ function RelatedEntriesList({
             ) : null}
           </div>
         }
+        extra={
+          detail?.listKey && INTERVIEW_APPLY_LIST_KEYS.has(detail.listKey) ? (
+            <Button
+              type="primary"
+              size="small"
+              className={styles.interviewApplyBtn}
+              onClick={() => setInterviewModalOpen(true)}
+            >
+              申请面谈
+            </Button>
+          ) : null
+        }
         placement="right"
         width={440}
         open={Boolean(detail)}
-        onClose={() => setDetail(null)}
+        onClose={() => {
+          setDetail(null);
+          setInterviewModalOpen(false);
+        }}
         destroyOnHidden
         className={styles.detailDrawer}
         styles={{
@@ -1333,6 +1360,49 @@ function RelatedEntriesList({
           </div>
         ) : null}
       </Drawer>
+
+      <Modal
+        open={interviewModalOpen}
+        onCancel={() => setInterviewModalOpen(false)}
+        footer={null}
+        centered
+        width={420}
+        destroyOnHidden
+        className={styles.interviewModal}
+        styles={{
+          body: { padding: '8px 8px 4px' },
+        }}
+      >
+        <div className={styles.interviewModalBody}>
+          <Typography.Title level={5} className={styles.interviewModalTitle}>
+            想要发布或对接需求、成果吗？
+          </Typography.Title>
+          <Typography.Paragraph className={styles.interviewModalLead}>
+            只差一步之遥！
+          </Typography.Paragraph>
+          <Typography.Paragraph className={styles.interviewModalDesc}>
+            个人用户请先认证成为技术经理人或通过单位账号登录后才能享受全部平台功能。
+          </Typography.Paragraph>
+          <div className={styles.interviewModalActions}>
+            <Button
+              className={styles.interviewModalLater}
+              onClick={() => setInterviewModalOpen(false)}
+            >
+              稍后再说
+            </Button>
+            <Button
+              type="primary"
+              className={styles.interviewModalCertify}
+              onClick={() => {
+                setInterviewModalOpen(false);
+                message.info('认证功能即将开放');
+              }}
+            >
+              去认证
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <KnowledgeGraphModal
         open={Boolean(kgTarget)}
@@ -3093,6 +3163,19 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     [displayName, feedbackById, messages, submit],
   );
 
+  const publishDock = (
+    <aside className={styles.sideFab} aria-label="快捷发布">
+      <button type="button" className={styles.sideFabItem}>
+        <FileDoneOutlined className={styles.sideFabIcon} aria-hidden />
+        <span className={styles.sideFabLabel}>发布成果</span>
+      </button>
+      <button type="button" className={styles.sideFabItem}>
+        <FormOutlined className={styles.sideFabIcon} aria-hidden />
+        <span className={styles.sideFabLabel}>发布需求</span>
+      </button>
+    </aside>
+  );
+
   if (historyLoading) {
     return (
       <main className={styles.page}>
@@ -3105,6 +3188,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             <Typography.Text type="secondary">正在加载历史对话…</Typography.Text>
           </div>
         </section>
+        {publishDock}
       </main>
     );
   }
@@ -3123,6 +3207,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             />
           </div>
         </section>
+        {publishDock}
       </main>
     );
   }
@@ -3167,6 +3252,7 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
           </Typography.Text>
         </footer>
       </section>
+      {publishDock}
     </main>
   );
 }
