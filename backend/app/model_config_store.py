@@ -1,4 +1,4 @@
-"""Admin-editable LLM / embedding model configuration (SQLite)."""
+"""Admin-editable LLM / embedding / rerank model configuration (SQLite)."""
 
 from __future__ import annotations
 
@@ -15,9 +15,18 @@ _DB_PATH = Path(__file__).resolve().parent.parent / "data" / "conversations.db"
 _LOCK = threading.Lock()
 _INITIALIZED = False
 _CONFIG_ID = "default"
-_MASK = "********"
 
 _DEFAULT_LLM: dict[str, Any] = {
+    "baseUrl": "http://njmaas.njdashuju.cn:9080/v1",
+    "authorization": "zk283VDdxF.4q94mt3KEH",
+    "aiApiCode": "UXdlbjMuNi0zNUItY2VzaGlfMV9sbG0",
+    "model": "Qwen3.6-35B-A3B",
+    "temperature": 0.7,
+    "maxTokens": 4096,
+    "enableThinking": False,
+}
+
+_DEFAULT_LLM2: dict[str, Any] = {
     "baseUrl": "http://njmaas.njdashuju.cn:9080/v1",
     "authorization": "zk283VDdxF.4q94mt3KEH",
     "aiApiCode": "UXdlbjMuNi0zNUItY2VzaGlfMV9sbG0",
@@ -34,10 +43,26 @@ _DEFAULT_EMBEDDING: dict[str, Any] = {
     "model": "bge-m3",
 }
 
+_DEFAULT_RERANK: dict[str, Any] = {
+    "baseUrl": "http://njmaas.njdashuju.cn:9080/rerank",
+    "authorization": "zk283VDdxF.4q94mt3KEH",
+    "aiApiCode": "YmdlLXJlcmFua2VyLXYyLW0zXzFfbGxt",
+    "model": "bge-reranker-v2-m3",
+}
+
 _DEFAULT_EMBEDDING_INPUT = [
     "This is the first sfafasdffffffffff to embed.safafa",
     "This is the second sentence.",
 ]
+
+_SECTION_DEFAULTS: dict[str, dict[str, Any]] = {
+    "llm": _DEFAULT_LLM,
+    "llm2": _DEFAULT_LLM2,
+    "embedding": _DEFAULT_EMBEDDING,
+    "rerank": _DEFAULT_RERANK,
+}
+
+_VALID_KINDS = frozenset(_SECTION_DEFAULTS.keys())
 
 
 def _connect() -> sqlite3.Connection:
@@ -46,6 +71,10 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def _default_payload() -> dict[str, Any]:
+    return {key: dict(value) for key, value in _SECTION_DEFAULTS.items()}
 
 
 def init_model_config() -> None:
@@ -71,21 +100,25 @@ def init_model_config() -> None:
                 (_CONFIG_ID,),
             ).fetchone()
             if row is None:
-                payload = {
-                    "llm": dict(_DEFAULT_LLM),
-                    "embedding": dict(_DEFAULT_EMBEDDING),
-                }
                 conn.execute(
                     """
                     INSERT INTO model_config (id, payload, updated_at)
                     VALUES (?, ?, datetime('now'))
                     """,
-                    (_CONFIG_ID, json.dumps(payload, ensure_ascii=False)),
+                    (_CONFIG_ID, json.dumps(_default_payload(), ensure_ascii=False)),
                 )
             conn.commit()
         finally:
             conn.close()
         _INITIALIZED = True
+
+
+def _normalize_payload(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, defaults in _SECTION_DEFAULTS.items():
+        section = data.get(key) if isinstance(data.get(key), dict) else {}
+        out[key] = {**defaults, **section}
+    return out
 
 
 def _load_raw() -> dict[str, Any]:
@@ -98,51 +131,19 @@ def _load_raw() -> dict[str, Any]:
                 (_CONFIG_ID,),
             ).fetchone()
             if row is None:
-                return {
-                    "llm": dict(_DEFAULT_LLM),
-                    "embedding": dict(_DEFAULT_EMBEDDING),
-                }
+                return _default_payload()
             data = json.loads(row["payload"])
             if not isinstance(data, dict):
                 raise ValueError("invalid payload")
-            llm = data.get("llm") if isinstance(data.get("llm"), dict) else {}
-            emb = data.get("embedding") if isinstance(data.get("embedding"), dict) else {}
-            return {
-                "llm": {**_DEFAULT_LLM, **llm},
-                "embedding": {**_DEFAULT_EMBEDDING, **emb},
-            }
+            return _normalize_payload(data)
         finally:
             conn.close()
 
 
-def _mask_section(section: dict[str, Any]) -> dict[str, Any]:
-    auth = str(section.get("authorization") or "").strip()
-    code = str(section.get("aiApiCode") or "").strip()
-    out = dict(section)
-    out["authorization"] = _MASK if auth else ""
-    out["authorizationConfigured"] = bool(auth)
-    out["aiApiCode"] = _MASK if code else ""
-    out["aiApiCodeConfigured"] = bool(code)
-    return out
-
-
 def get_model_config_public() -> dict[str, Any]:
-    """Return config with secrets masked for admin UI."""
+    """Return full config (plaintext secrets) for the admin UI."""
 
-    raw = _load_raw()
-    return {
-        "llm": _mask_section(raw["llm"]),
-        "embedding": _mask_section(raw["embedding"]),
-    }
-
-
-def _is_secret_placeholder(value: Any) -> bool:
-    if value is None:
-        return True
-    if not isinstance(value, str):
-        return False
-    text = value.strip()
-    return text == "" or text == _MASK or set(text) <= {"*"}
+    return _load_raw()
 
 
 def _merge_section(
@@ -164,13 +165,13 @@ def _merge_section(
         if model:
             merged["model"] = model
 
-    if "authorization" in incoming and not _is_secret_placeholder(incoming["authorization"]):
-        merged["authorization"] = str(incoming["authorization"]).strip()
+    if "authorization" in incoming and isinstance(incoming["authorization"], str):
+        merged["authorization"] = incoming["authorization"].strip()
 
-    if "aiApiCode" in incoming and not _is_secret_placeholder(incoming["aiApiCode"]):
-        merged["aiApiCode"] = str(incoming["aiApiCode"]).strip()
+    if "aiApiCode" in incoming and isinstance(incoming["aiApiCode"], str):
+        merged["aiApiCode"] = incoming["aiApiCode"].strip()
 
-    if kind == "llm":
+    if kind in ("llm", "llm2"):
         if "temperature" in incoming:
             try:
                 temp = float(incoming["temperature"])
@@ -190,24 +191,21 @@ def _merge_section(
 
 
 def save_model_config(body: dict[str, Any]) -> dict[str, Any]:
-    """Merge and persist config. Empty/masked secrets keep previous values."""
+    """Merge and persist config. All fields saved as submitted."""
 
     if not isinstance(body, dict):
         raise ValueError("请求体必须是 JSON 对象")
 
     current = _load_raw()
-    llm_in = body.get("llm") if isinstance(body.get("llm"), dict) else {}
-    emb_in = body.get("embedding") if isinstance(body.get("embedding"), dict) else {}
-
-    next_payload = {
-        "llm": _merge_section(current["llm"], llm_in, defaults=_DEFAULT_LLM, kind="llm"),
-        "embedding": _merge_section(
-            current["embedding"],
-            emb_in,
-            defaults=_DEFAULT_EMBEDDING,
-            kind="embedding",
-        ),
-    }
+    next_payload: dict[str, Any] = {}
+    for key, defaults in _SECTION_DEFAULTS.items():
+        incoming = body.get(key) if isinstance(body.get(key), dict) else {}
+        next_payload[key] = _merge_section(
+            current[key],
+            incoming,
+            defaults=defaults,
+            kind=key,
+        )
 
     with _LOCK:
         conn = _connect()
@@ -241,13 +239,13 @@ def _build_headers(section: dict[str, Any]) -> dict[str, str]:
 
 
 async def test_model_config(kind: str) -> dict[str, Any]:
-    """Probe LLM chat/completions or embedding endpoint with saved config."""
+    """Probe LLM / embedding / rerank endpoint with saved config."""
 
-    if kind not in ("llm", "embedding"):
-        raise ValueError("kind 必须是 llm 或 embedding")
+    if kind not in _VALID_KINDS:
+        raise ValueError("kind 必须是 llm、llm2、embedding 或 rerank")
 
     raw = _load_raw()
-    section = raw["llm"] if kind == "llm" else raw["embedding"]
+    section = raw[kind]
     base = str(section.get("baseUrl") or "").strip().rstrip("/")
     model = str(section.get("model") or "").strip()
     if not base:
@@ -258,7 +256,7 @@ async def test_model_config(kind: str) -> dict[str, Any]:
     headers = _build_headers(section)
     started = time.perf_counter()
 
-    if kind == "llm":
+    if kind in ("llm", "llm2"):
         url = f"{base}/chat/completions"
         temperature = float(section.get("temperature") or 0.7)
         max_tokens = int(section.get("maxTokens") or 4096)
@@ -274,12 +272,29 @@ async def test_model_config(kind: str) -> dict[str, Any]:
                 "preserve_thinking": False,
             },
         }
-    else:
+    elif kind == "embedding":
         url = f"{base}/embeddings"
         payload = {
             "model": model,
             "input": list(_DEFAULT_EMBEDDING_INPUT),
         }
+    else:
+        url = base
+        payload = {
+            "model": model,
+            "query": "capital of France",
+            "documents": [
+                "The capital of Brazil is Brasilia.",
+                "The capital of France is Paris.",
+            ],
+        }
+
+    labels = {
+        "llm": "大语言模型配置1",
+        "llm2": "大语言模型配置2",
+        "embedding": "Embedding 模型",
+        "rerank": "Rerank 模型",
+    }
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -301,7 +316,7 @@ async def test_model_config(kind: str) -> dict[str, Any]:
                 "latencyMs": latency_ms,
             }
 
-        if kind == "llm":
+        if kind in ("llm", "llm2"):
             choices = data.get("choices") if isinstance(data, dict) else None
             if not isinstance(choices, list) or not choices:
                 return {
@@ -309,7 +324,7 @@ async def test_model_config(kind: str) -> dict[str, Any]:
                     "message": "连通成功但响应缺少 choices",
                     "latencyMs": latency_ms,
                 }
-        else:
+        elif kind == "embedding":
             items = data.get("data") if isinstance(data, dict) else None
             if not isinstance(items, list) or not items:
                 return {
@@ -317,11 +332,18 @@ async def test_model_config(kind: str) -> dict[str, Any]:
                     "message": "连通成功但响应缺少 embedding data",
                     "latencyMs": latency_ms,
                 }
+        else:
+            # Rerank APIs vary: results / data / scores
+            if not isinstance(data, dict):
+                return {
+                    "ok": False,
+                    "message": "连通成功但响应格式异常",
+                    "latencyMs": latency_ms,
+                }
 
-        label = "大语言模型" if kind == "llm" else "Embedding 模型"
         return {
             "ok": True,
-            "message": f"{label}连通成功",
+            "message": f"{labels[kind]}连通成功",
             "latencyMs": latency_ms,
         }
     except httpx.TimeoutException:

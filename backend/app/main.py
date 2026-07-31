@@ -584,7 +584,7 @@ async def stream_chat(
 
 
 # ---------------------------------------------------------------------------
-# Admin: model configuration (LLM + embedding)
+# Admin: model configuration (LLM ×2 + embedding + rerank)
 # ---------------------------------------------------------------------------
 
 
@@ -592,7 +592,7 @@ async def stream_chat(
 def api_get_model_config(
     _admin: dict[str, Any] = Depends(get_current_admin),
 ) -> dict[str, Any]:
-    """Return masked LLM / embedding settings for the admin UI."""
+    """Return LLM / embedding / rerank settings for the admin UI (plaintext)."""
 
     return get_model_config_public()
 
@@ -602,7 +602,7 @@ async def api_put_model_config(
     request: Request,
     _admin: dict[str, Any] = Depends(get_current_admin),
 ) -> dict[str, Any]:
-    """Save LLM / embedding settings. Empty masked secrets keep previous values."""
+    """Save model settings (llm, llm2, embedding, rerank)."""
 
     try:
         body = await request.json()
@@ -623,7 +623,7 @@ async def api_test_model_config(
     request: Request,
     _admin: dict[str, Any] = Depends(get_current_admin),
 ) -> dict[str, Any]:
-    """Connectivity probe for saved LLM or embedding config."""
+    """Connectivity probe for a saved model section."""
 
     try:
         body = await request.json()
@@ -634,8 +634,11 @@ async def api_test_model_config(
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
 
     kind = body.get("kind")
-    if kind not in ("llm", "embedding"):
-        raise HTTPException(status_code=422, detail="kind 必须是 llm 或 embedding")
+    if kind not in ("llm", "llm2", "embedding", "rerank"):
+        raise HTTPException(
+            status_code=422,
+            detail="kind 必须是 llm、llm2、embedding 或 rerank",
+        )
 
     try:
         return await test_model_config(kind)

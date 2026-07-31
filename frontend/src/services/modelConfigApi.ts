@@ -1,11 +1,11 @@
 import { authHeaders, parseJsonResponse } from './http';
 
+export type ModelConfigKind = 'llm' | 'llm2' | 'embedding' | 'rerank';
+
 export interface LlmConfig {
   baseUrl: string;
   authorization: string;
-  authorizationConfigured: boolean;
   aiApiCode: string;
-  aiApiCodeConfigured: boolean;
   model: string;
   temperature: number;
   maxTokens: number;
@@ -15,15 +15,22 @@ export interface LlmConfig {
 export interface EmbeddingConfig {
   baseUrl: string;
   authorization: string;
-  authorizationConfigured: boolean;
   aiApiCode: string;
-  aiApiCodeConfigured: boolean;
+  model: string;
+}
+
+export interface RerankConfig {
+  baseUrl: string;
+  authorization: string;
+  aiApiCode: string;
   model: string;
 }
 
 export interface ModelConfig {
   llm: LlmConfig;
+  llm2: LlmConfig;
   embedding: EmbeddingConfig;
+  rerank: RerankConfig;
 }
 
 export interface ModelConfigTestResult {
@@ -59,9 +66,7 @@ function normalizeLlm(raw: unknown): LlmConfig {
   return {
     baseUrl: asString(record.baseUrl),
     authorization: asString(record.authorization),
-    authorizationConfigured: asBool(record.authorizationConfigured),
     aiApiCode: asString(record.aiApiCode),
-    aiApiCodeConfigured: asBool(record.aiApiCodeConfigured),
     model: asString(record.model),
     temperature: asNumber(record.temperature, 0.7),
     maxTokens: asNumber(record.maxTokens, 4096),
@@ -69,15 +74,13 @@ function normalizeLlm(raw: unknown): LlmConfig {
   };
 }
 
-function normalizeEmbedding(raw: unknown): EmbeddingConfig {
+function normalizeSimple(raw: unknown): EmbeddingConfig {
   const record =
     raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return {
     baseUrl: asString(record.baseUrl),
     authorization: asString(record.authorization),
-    authorizationConfigured: asBool(record.authorizationConfigured),
     aiApiCode: asString(record.aiApiCode),
-    aiApiCodeConfigured: asBool(record.aiApiCodeConfigured),
     model: asString(record.model),
   };
 }
@@ -89,7 +92,9 @@ function normalizeConfig(raw: unknown): ModelConfig {
   const record = raw as Record<string, unknown>;
   return {
     llm: normalizeLlm(record.llm),
-    embedding: normalizeEmbedding(record.embedding),
+    llm2: normalizeLlm(record.llm2 ?? record.llm),
+    embedding: normalizeSimple(record.embedding),
+    rerank: normalizeSimple(record.rerank),
   };
 }
 
@@ -118,7 +123,7 @@ export async function saveModelConfig(
 }
 
 export async function testModelConfig(
-  kind: 'llm' | 'embedding',
+  kind: ModelConfigKind,
 ): Promise<ModelConfigTestResult> {
   const response = await fetch('/api/admin/model-config/test', {
     method: 'POST',
