@@ -309,9 +309,8 @@ export default function HomePage() {
 											}
 											aria-label="选择模型"
 											popupMatchSelectWidth={false}
-											getPopupContainer={(node) =>
-												node.parentElement ?? document.body
-											}
+										getPopupContainer={() => document.body}
+										placement="topLeft"
 										/>
 										<SendButton
 											type="primary"

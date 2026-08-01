@@ -256,6 +256,7 @@
 }
 
 .modelSelectPopup {
+  z-index: 1100 !important;
   border-radius: 10px !important;
   padding: 4px !important;
 }

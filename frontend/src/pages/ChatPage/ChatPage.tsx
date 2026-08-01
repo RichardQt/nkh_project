@@ -542,6 +542,69 @@ function startThoughtStep(status: ThoughtStepStatus): ThoughtStepStatus {
   return status === 'pending' ? 'loading' : status;
 }
 
+/** 单个关键词上限：过滤用户长描述被当关键词展示的情况 */
+const MAX_THOUGHT_KEYWORD_CHARS = 24;
+const MAX_THOUGHT_KEYWORD_COUNT = 12;
+/** 整段 query 超过此长度且含句读，视为用户原文而非关键词串 */
+const MAX_THOUGHT_QUERY_PROSE_CHARS = 48;
+
+/**
+ * 从接口 keywords / optimized_query 中提取可展示的短关键词。
+ * 长段落、整句用户输入一律丢弃，避免先闪整段描述再被真正关键词覆盖。
+ */
+function extractThoughtKeywords(input: {
+  keywords?: readonly string[];
+  query?: string;
+}): string | undefined {
+  const normalize = (raw: readonly string[]): string[] => {
+    const out: string[] = [];
+    for (const item of raw) {
+      const token = item
+        .trim()
+        .replace(/^[/／|·•]+|[/／|·•]+$/g, '')
+        .trim();
+      if (!token || token === '/' || token === '／') {
+        continue;
+      }
+      if (token.length > MAX_THOUGHT_KEYWORD_CHARS) {
+        continue;
+      }
+      if (/[。！？；\n]/.test(token)) {
+        continue;
+      }
+      if (!out.includes(token)) {
+        out.push(token);
+      }
+      if (out.length >= MAX_THOUGHT_KEYWORD_COUNT) {
+        break;
+      }
+    }
+    return out;
+  };
+
+  // 优先 keywords[]：接口显式关键词列表
+  if (input.keywords?.length) {
+    const fromList = normalize(input.keywords);
+    if (fromList.length) {
+      return fromList.join('、');
+    }
+  }
+
+  const query = input.query?.trim() ?? '';
+  if (!query) {
+    return undefined;
+  }
+  // 整段用户描述 / 成果简介：直接丢弃，等后续真正关键词事件
+  if (
+    query.length > MAX_THOUGHT_QUERY_PROSE_CHARS ||
+    /[。！？；\n]/.test(query)
+  ) {
+    return undefined;
+  }
+  const fromQuery = normalize(query.split(/[\s、,，;；|]+/));
+  return fromQuery.length ? fromQuery.join('、') : undefined;
+}
+
 /**
  * Product contract: ``need_clarify`` on node_end(clarify / followup_check).
  * - false → question is clear, proceed to deep thinking
@@ -680,7 +743,7 @@ function updateThoughtNode(
     };
   }
 
-  // retrieval 节点：拿到优化后的查询关键词后，才完成「分析用户问题」
+  // retrieval 节点：拿到接口返回的关键词后，才完成「分析用户问题」
   if (event.node === 'retrieval') {
     if (phase === 'start') {
       return {
@@ -696,11 +759,15 @@ function updateThoughtNode(
       };
     }
 
-    const optimizedQuery =
-      event.optimizedQuery?.trim() || current.clarity.optimizedQuery;
+    // 仅短关键词可写入；长描述/用户原话不算，保持 loading
+    const extracted = extractThoughtKeywords({
+      keywords: event.keywords,
+      query: event.optimizedQuery,
+    });
+    const optimizedQuery = extracted || current.clarity.optimizedQuery;
     const needClarify = event.needClarify ?? current.clarity.needClarify;
-    const clarityDone =
-      Boolean(optimizedQuery) || needClarify === true;
+    const hasApiKeywords = Boolean(extracted);
+    const clarityDone = hasApiKeywords || needClarify === true;
 
     return {
       ...current,
@@ -714,7 +781,7 @@ function updateThoughtNode(
         ...current.clarity,
         status: clarityDone ? 'success' : 'loading',
         needClarify,
-        optimizedQuery,
+        ...(hasApiKeywords ? { optimizedQuery } : {}),
       },
       reasoning:
         clarityDone &&
@@ -732,8 +799,8 @@ function activateReasoning(
   state: ChatThoughtState | undefined,
 ): ChatThoughtState {
   const current = state ?? createThoughtState();
+  // 仅当接口已写入关键词或确认需澄清时，才把「分析用户问题」收成 success
   const clarityReady =
-    current.clarity.status === 'success' ||
     Boolean(current.clarity.optimizedQuery?.trim()) ||
     shouldAskFollowup(current) === true;
 
@@ -744,7 +811,6 @@ function activateReasoning(
     },
     clarity: {
       ...current.clarity,
-      // 有关键词或确认需澄清时才收成 success；否则保持 loading + blink
       status: clarityReady
         ? completePrecedingStep(current.clarity.status)
         : startThoughtStep(current.clarity.status),
@@ -767,10 +833,10 @@ function completeThoughtState(
       ? 'success'
       : current.reasoning.status;
 
-  // 分析步骤：有关键词 / 需澄清 / 已有输出时再收成 success，避免闪过“问题明确…”
+  // 分析步骤：仅有接口关键词或需澄清时收成 success；无关键词不因有输出而提前成功
   let clarityStatus = current.clarity.status;
   if (clarityStatus === 'loading') {
-    if (needsClarification || hasKeywords || hasOutput) {
+    if (needsClarification || hasKeywords) {
       clarityStatus = 'success';
     }
   }
@@ -856,7 +922,7 @@ function intentDescription(state: ChatThoughtState): ReactNode {
 function clarityDescription(state: ChatThoughtState): ReactNode {
   switch (state.clarity.status) {
     case 'loading':
-      return '正在分析用户问题';
+      return '正在思考用户问题';
     case 'success': {
       const needsClarification = shouldAskFollowup(state);
       if (needsClarification === true) {
@@ -878,7 +944,8 @@ function clarityDescription(state: ChatThoughtState): ReactNode {
           </>
         );
       }
-      return '用户问题分析成功';
+      // 接口尚未返回关键词时不提前展示“分析成功”
+      return '正在思考用户问题';
     }
     case 'error':
       return '用户问题分析失败';
@@ -921,11 +988,9 @@ function reasoningDescriptionText(state: ChatThoughtState): string {
 
 function ReasoningDescription({
   status,
-  reduceMotion,
   pendingText,
 }: {
   status: ThoughtStepStatus;
-  reduceMotion: boolean | null;
   pendingText: string;
 }) {
   const [visibleCount, setVisibleCount] = useState(() =>
@@ -939,10 +1004,6 @@ function ReasoningDescription({
     }
 
     setVisibleCount(1);
-    if (reduceMotion) {
-      setVisibleCount(REASONING_PROGRESS_STEPS.length);
-      return;
-    }
 
     let step = 1;
     const timer = window.setInterval(() => {
@@ -954,7 +1015,7 @@ function ReasoningDescription({
     }, REASONING_STEP_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
-  }, [status, reduceMotion]);
+  }, [status]);
 
   if (status === 'success') {
     return <span className={styles.thoughtDescription}>思考完成</span>;
@@ -988,7 +1049,7 @@ function thoughtAnnouncement(state: ChatThoughtState): string {
     return `深度思考：${reasoningDescriptionText(state)}`;
   }
   if (state.clarity.status === 'loading') {
-    return '分析用户问题：正在分析用户问题';
+    return '分析用户问题：正在思考用户问题';
   }
   if (state.clarity.status !== 'pending') {
     const keywords =
@@ -1003,10 +1064,8 @@ function thoughtAnnouncement(state: ChatThoughtState): string {
     if (keywords) {
       return `分析用户问题：用户问题分析成功，与${keywords}关键词相关`;
     }
-    if (state.clarity.status === 'success') {
-      return '分析用户问题：用户问题分析成功';
-    }
-    return '分析用户问题：正在分析用户问题';
+    // 无接口关键词时保持思考态文案，避免先闪“分析成功”
+    return '分析用户问题：正在思考用户问题';
   }
   const label =
     state.intent.intent && INTENT_LABELS[state.intent.intent]
@@ -1023,10 +1082,8 @@ function thoughtAnnouncement(state: ChatThoughtState): string {
 
 function ThoughtProgress({
   message,
-  reduceMotion,
 }: {
   message: ChatMessage;
-  reduceMotion: boolean | null;
 }) {
   const state = message.thoughtState ?? {
     intent: { status: 'success' },
@@ -1053,7 +1110,8 @@ function ThoughtProgress({
         </span>
       ),
       status: toThoughtItemStatus(state.intent.status),
-      blink: !reduceMotion && state.intent.status === 'loading',
+      // Always show loading feedback even when OS prefers reduced motion.
+      blink: state.intent.status === 'loading',
     },
     {
       key: 'clarity',
@@ -1064,7 +1122,7 @@ function ThoughtProgress({
         </span>
       ),
       status: toThoughtItemStatus(state.clarity.status),
-      blink: !reduceMotion && state.clarity.status === 'loading',
+      blink: state.clarity.status === 'loading',
     },
     {
       key: 'reasoning',
@@ -1072,12 +1130,11 @@ function ThoughtProgress({
       description: (
         <ReasoningDescription
           status={state.reasoning.status}
-          reduceMotion={reduceMotion}
           pendingText={reasoningDescriptionText(state)}
         />
       ),
       status: toThoughtItemStatus(state.reasoning.status),
-      blink: !reduceMotion && state.reasoning.status === 'loading',
+      blink: state.reasoning.status === 'loading',
     },
   ];
 
@@ -1759,7 +1816,7 @@ function AnswerSegment({
   return (
     <div className={styles.answerSegment}>
       {showThoughtProgress ? (
-        <ThoughtProgress message={progressMessage} reduceMotion={reduceMotion} />
+        <ThoughtProgress message={progressMessage} />
       ) : null}
 
       {showClarifyPanel ? (
@@ -2952,12 +3009,9 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             if (!isActiveTarget()) {
               return;
             }
-            // 前置思维链一致：关键词统一写入 clarity.optimizedQuery
-            const keywordText =
-              payload.keywords.length > 0
-                ? payload.keywords.join('、')
-                : payload.query;
-            if (!keywordText.trim()) {
+            // 只接受短关键词；整段用户描述/长 query 忽略，保持「正在思考」
+            const keywordText = extractThoughtKeywords(payload);
+            if (!keywordText) {
               return;
             }
             patchTarget((target) => {
@@ -2996,11 +3050,8 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             if (!isResearchDirectionMode()) {
               resolvedSceneMode = 'research_direction';
             }
-            const keywordText =
-              payload.keywords.length > 0
-                ? payload.keywords.join('、')
-                : payload.query;
-            if (!keywordText.trim()) {
+            const keywordText = extractThoughtKeywords(payload);
+            if (!keywordText) {
               return;
             }
             patchTarget((target) => {
@@ -4269,9 +4320,6 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         className={styles.publishModal}
         footer={
           <div className={styles.publishModalFooter}>
-            <Button onClick={() => setPublishAchievementOpen(false)}>
-              稍后再试
-            </Button>
             <Button
               type="primary"
               onClick={() => {
@@ -4341,9 +4389,6 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         className={styles.publishModal}
         footer={
           <div className={styles.publishModalFooter}>
-            <Button onClick={() => setPublishRequirementOpen(false)}>
-              稍后再试
-            </Button>
             <Button
               type="primary"
               onClick={() => {

@@ -101,4 +101,14 @@ a {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  /* Keep chat thought-chain loading feedback visible on locked-down desktops. */
+  .ant-thought-chain .ant-thought-chain-motion-blink,
+  .ant-thought-chain .ant-thought-chain-motion-blink *,
+  .ant-thought-chain .anticon-spin,
+  .ant-thought-chain .anticon-spin svg {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+    transition-duration: initial !important;
+  }
 }

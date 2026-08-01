@@ -3,7 +3,6 @@ import {
   buildAchievementEvalResult,
   buildSceneResult,
   buildSearchResults,
-  PLACEHOLDER,
   POLICY_RECOMMEND_THINKING,
   RESEARCH_DIRECTION_THINKING,
   splitThinkingTokens,
@@ -64,18 +63,15 @@ function intentForAgent(agentKey: SceneMockStreamAgentKey): string {
   return 'research_direction';
 }
 
-function optimizedQueryFor(
-  agentKey: SceneMockStreamAgentKey,
-  message: string,
-): string {
-  const base = message.trim() || PLACEHOLDER;
+function optimizedQueryFor(agentKey: SceneMockStreamAgentKey): string {
+  // 模拟接口返回的检索关键词，不把用户原话拼进去
   if (agentKey === 'policy_recommend') {
-    return `${base} 政策 申报`;
+    return '高新技术企业、研发费用加计扣除、政策申报';
   }
   if (agentKey === 'achievement_eval') {
-    return "单晶金刚石、金刚石籽晶、钼衬底、同质外延、MWCVD";
+    return '单晶金刚石、金刚石籽晶、钼衬底、同质外延、MWCVD';
   }
-  return `${base} 研发方向 专家团队 智慧医疗`;
+  return '研发方向、专家团队、智慧医疗';
 }
 
 function thinkTokens(agentKey: SceneMockStreamAgentKey): string[] {
@@ -121,7 +117,7 @@ export function startNoDataStream(
   const controller = new AbortController();
   const { agentKey } = input;
   const intent = intentForAgent(agentKey);
-  const optimizedQuery = optimizedQueryFor(agentKey, input.message);
+  const optimizedQuery = optimizedQueryFor(agentKey);
 
   void (async () => {
     try {
@@ -199,7 +195,7 @@ export function startSceneMockStream(
   const controller = new AbortController();
   const { agentKey, message } = input;
   const intent = intentForAgent(agentKey);
-  const optimizedQuery = optimizedQueryFor(agentKey, message);
+  const optimizedQuery = optimizedQueryFor(agentKey);
   const needsSearch =
     agentKey === 'achievement_eval' || agentKey === 'research_direction';
 

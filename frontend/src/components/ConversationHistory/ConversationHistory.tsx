@@ -37,12 +37,30 @@ interface ConversationHistoryProps {
   onDeleted?: (id: string) => void;
 }
 
+interface MenuAnchor {
+  top: number;
+  left: number;
+}
+
 /** Default: expand today; collapse yesterday / earlier to free sidebar space. */
 const DEFAULT_COLLAPSED: Record<HistoryGroupKey, boolean> = {
   today: false,
   yesterday: true,
   earlier: true,
 };
+
+const MENU_WIDTH = 120;
+const MENU_GAP = 4;
+
+function anchorFromButton(button: HTMLElement): MenuAnchor {
+  const rect = button.getBoundingClientRect();
+  const left = Math.min(
+    Math.max(8, rect.right - MENU_WIDTH),
+    Math.max(8, window.innerWidth - MENU_WIDTH - 8),
+  );
+  const top = Math.min(rect.bottom + MENU_GAP, window.innerHeight - 8);
+  return { top, left };
+}
 
 export default function ConversationHistory({
   activeConversationId,
@@ -53,6 +71,7 @@ export default function ConversationHistory({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
   const [sectionCollapsed, setSectionCollapsed] = useState(false);
   const [collapsedByKey, setCollapsedByKey] = useState(DEFAULT_COLLAPSED);
 
@@ -123,16 +142,42 @@ export default function ConversationHistory({
     setCollapsedByKey((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  const openRename = useCallback((item: ConversationSummary) => {
+  const closeMenu = useCallback(() => {
     setMenuOpenId(null);
-    setRenameTarget(item);
-    setRenameValue(item.title);
+    setMenuAnchor(null);
   }, []);
 
-  const openDelete = useCallback((item: ConversationSummary) => {
-    setMenuOpenId(null);
-    setDeleteTarget(item);
-  }, []);
+  const openRename = useCallback(
+    (item: ConversationSummary) => {
+      closeMenu();
+      setRenameTarget(item);
+      setRenameValue(item.title);
+    },
+    [closeMenu],
+  );
+
+  const openDelete = useCallback(
+    (item: ConversationSummary) => {
+      closeMenu();
+      setDeleteTarget(item);
+    },
+    [closeMenu],
+  );
+
+  useEffect(() => {
+    if (!menuOpenId) {
+      return;
+    }
+    const onViewportChange = () => {
+      closeMenu();
+    };
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, true);
+    return () => {
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onViewportChange, true);
+    };
+  }, [menuOpenId, closeMenu]);
 
   const handleRenameOk = useCallback(async () => {
     if (!renameTarget) {
@@ -324,8 +369,26 @@ export default function ConversationHistory({
                                 trigger={['click']}
                                 placement="bottomRight"
                                 open={menuOpen}
+                                destroyOnHidden
+                                getPopupContainer={() => document.body}
+                                classNames={{ root: styles.menuPopup }}
+                                styles={
+                                  menuOpen && menuAnchor
+                                    ? {
+                                        root: {
+                                          // CSS vars win over antd/rc-trigger inline align styles.
+                                          ['--history-menu-top' as string]:
+                                            `${menuAnchor.top}px`,
+                                          ['--history-menu-left' as string]:
+                                            `${menuAnchor.left}px`,
+                                        },
+                                      }
+                                    : undefined
+                                }
                                 onOpenChange={(open) => {
-                                  setMenuOpenId(open ? item.id : null);
+                                  if (!open) {
+                                    closeMenu();
+                                  }
                                 }}
                               >
                                 <button
@@ -334,6 +397,14 @@ export default function ConversationHistory({
                                   aria-label={`更多操作：${item.title}`}
                                   onClick={(event) => {
                                     event.stopPropagation();
+                                    if (menuOpenId === item.id) {
+                                      closeMenu();
+                                      return;
+                                    }
+                                    setMenuAnchor(
+                                      anchorFromButton(event.currentTarget),
+                                    );
+                                    setMenuOpenId(item.id);
                                   }}
                                 >
                                   <MoreOutlined />

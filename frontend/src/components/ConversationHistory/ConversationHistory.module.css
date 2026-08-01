@@ -257,6 +257,17 @@
   transform: translateY(1px);
 }
 
+/* Force viewport-fixed placement; antd align can jump off-screen in fixed sider. */
+.menuPopup {
+  position: fixed !important;
+  top: var(--history-menu-top, 0) !important;
+  left: var(--history-menu-left, 0) !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+}
+
 .confirmText {
   margin: 0 !important;
   color: var(--text-secondary) !important;

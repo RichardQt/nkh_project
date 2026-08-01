@@ -291,6 +291,8 @@ export default function UserPersonaPage() {
                       label: value,
                     }))}
                     maxTagCount="responsive"
+                    getPopupContainer={() => document.body}
+                    popupMatchSelectWidth={false}
                   />
                 </Form.Item>
 
