@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ComponentRef } from "react";
 import { ArrowUpOutlined, DownOutlined } from "@ant-design/icons";
 import { Sender, Welcome } from "@ant-design/x";
-import { Button, Flex, Select, message } from "antd";
+import { Button, Flex, Select, Tooltip, message } from "antd";
 import { motion, useReducedMotion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import AgentGlyph from "../../components/AgentGlyph/AgentGlyph";
@@ -44,11 +44,17 @@ const MODULE_SUGGESTED_QUESTIONS: Record<AgentKey, readonly string[]> = {
 应用现状：完成多批次籽晶衬底钎焊试验与金刚石外延生长对比验证，拉曼光谱证明单晶质量显著提升，仅停留在实验室试样制备，暂未对接金刚石量产企业实现工程化落地。
 帮我对该成果进行评价`,
 	],
-	research_direction: ["边缘智能研究院"],
+	research_direction: ["边缘智能研究院南京有限公司"],
 	achievement_discover: ["灌浆材料存在泌水问题，有哪些好的成果能推荐？"],
 	expert_discover: ["医学领域有哪些专家？"],
-	demand_discover: ["骨科手术影像系统需求有哪些？"],
-	enterprise_discover: ["人工智能领域有哪些企业？"],
+	demand_discover: [
+		`我有一个成果，计算机辅助骨科手术，计算机导航系统辅助采用的技术主要是将患者术前或术中影像数据和手术床上患者解剖结构准确对应，手术中跟踪手术器械的位置，对手术进行实时的导航。该技术虽取得了较为满意的结果，但由于患者必须行术前CT或术中X线多方位透视，然后在术中进行影像数据和患者解剖结构对应匹配，其过程复杂，使手术时间延长，增加了患者和医师在X线下暴露的时间。该项目将人体解剖学、现代影像学、计算机三维重建、逆向工程技术及快速成形技术相结合，针对骨科常实施的内固定置入物的定位、定向等问题进行研究。
+帮我匹配相关需求`,
+	],
+	enterprise_discover: [
+		`我有一个成果，能针对传统城市设计周期长、不可解释及非矢量化等痛点，研发了国内首个基于可解释人工智能（XAI）的城市设计智能化平台 。团队攻克了“矢量数据生成”、“刚柔规则谱系参数化转译”以及“几何深度学习与反馈强化”等核心技术 ，实现城市规划“刚性规范”与“柔性美学”的协同控制 。平台集成了路网、空间形态生成等五大模块，支持十平方公里级方案6分钟全流程自动化生成，效率提升10倍以上 ，已在多项国内外重大工程中成功应用 。
+有哪些企业可能会对我的成果感兴趣？`,
+	],
 	platform_discover: [
 		"我们是做生物医药的，需要仪器和平台验证，有哪些可以推荐给我？",
 	],
@@ -290,9 +296,7 @@ export default function HomePage() {
 									<div className={styles.composerToolbar}>
 										<Select
 											value={selectedModel}
-											onChange={(next) =>
-												setSelectedModel(next as ChatModel)
-											}
+											onChange={(next) => setSelectedModel(next as ChatModel)}
 											options={[...CHAT_MODELS]}
 											className={styles.modelSelect}
 											classNames={{
@@ -332,25 +336,38 @@ export default function HomePage() {
 								<p className={styles.suggestionHint}>猜你想问：</p>
 								<ul className={styles.suggestionList}>
 									{suggestedQuestions.map((question) => {
-										const label =
-											question.length > 50
-												? `${question.slice(0, 20)}...`
-												: question;
+										const truncated = question.length > 30;
+										const label = truncated
+											? `${question.slice(0, 30)}...`
+											: question;
+										const item = (
+											<button
+												type="button"
+												className={styles.suggestionItem}
+												role="option"
+												onMouseDown={(event) => {
+													// 阻止按钮抢焦点导致输入框 blur 后弹层先关
+													event.preventDefault();
+												}}
+												onClick={() => pickSuggestion(question)}
+											>
+												{label}
+											</button>
+										);
 										return (
 											<li key={question}>
-												<button
-													type="button"
-													className={styles.suggestionItem}
-													role="option"
-													title={question}
-													onMouseDown={(event) => {
-														// 阻止按钮抢焦点导致输入框 blur 后弹层先关
-														event.preventDefault();
-													}}
-													onClick={() => pickSuggestion(question)}
-												>
-													{label}
-												</button>
+												{truncated ? (
+													<Tooltip
+														title={question}
+														placement="right"
+														mouseEnterDelay={0.25}
+														overlayClassName={styles.suggestionTooltip}
+													>
+														{item}
+													</Tooltip>
+												) : (
+													item
+												)}
 											</li>
 										);
 									})}

@@ -400,6 +400,24 @@
   background: color-mix(in srgb, var(--primary-soft) 88%, var(--surface));
 }
 
+.suggestionTooltip :global(.ant-tooltip-inner) {
+  max-width: min(360px, 72vw);
+  padding: 8px 12px;
+  color: #f8fafc;
+  font-size: 12.5px;
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+  background: #0f172a;
+  border-radius: 8px;
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.suggestionTooltip :global(.ant-tooltip-arrow::before) {
+  background: #0f172a;
+}
+
 /* 旧 recommendation 样式保留兼容，当前首页未再挂载 */
 .recommendationPanel {
   width: 100%;
