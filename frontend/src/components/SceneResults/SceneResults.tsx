@@ -1,6 +1,6 @@
 import { LinkOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useState, type ReactNode } from 'react';
-import { Drawer, Empty, Tooltip, Typography } from 'antd';
+import { Button, Drawer, Empty, Modal, Tooltip, Typography, message } from 'antd';
 import type {
   AchievementEvalDimension,
   AchievementEvalResult,
@@ -524,9 +524,25 @@ function AchievementEvalPanel({ result }: { result: AchievementEvalResult }) {
   );
 }
 
-const RESEARCH_PILLAR_TITLES = RESEARCH_DIRECTION_SUMMARY_PILLARS.map(
-  (item) => item.title,
-);
+/** Match mock flatten blocks: short title + fullwidth colon + body. */
+const PILLAR_BLOCK_RE = /^(.{1,40}?)[：:]([\s\S]+)$/;
+
+function parsePillarBlock(block: string): { title: string; body: string } | null {
+  const match = block.match(PILLAR_BLOCK_RE);
+  if (!match) {
+    return null;
+  }
+  const title = match[1]!.trim();
+  const body = match[2]!.trim();
+  if (!title || !body) {
+    return null;
+  }
+  // Avoid treating long prose paragraphs as list titles.
+  if (/[。；;\n]/.test(title) || title.startsWith('综合来看')) {
+    return null;
+  }
+  return { title, body };
+}
 
 function buildResearchSummaryView(summary: string) {
   const text = summary.trim();
@@ -538,55 +554,71 @@ function buildResearchSummaryView(summary: string) {
     };
   }
 
-  let remaining = text;
+  // Prefer structured mock pillars once the full flattened summary is present
+  // (avoids title hardcoding; still works while streaming via block parse).
+  const fullMock = RESEARCH_DIRECTION_SUMMARY_PILLARS.every((item) =>
+    text.includes(`${item.title}：`) || text.includes(`${item.title}:`),
+  );
+  if (fullMock && RESEARCH_DIRECTION_SUMMARY_PILLARS.length > 0) {
+    const firstTitle = RESEARCH_DIRECTION_SUMMARY_PILLARS[0]!.title;
+    const firstIdxFull = text.indexOf(`${firstTitle}：`);
+    const firstIdxHalf = text.indexOf(`${firstTitle}:`);
+    const firstIdx =
+      firstIdxFull >= 0
+        ? firstIdxFull
+        : firstIdxHalf >= 0
+          ? firstIdxHalf
+          : -1;
+    const outlookIdx = text.indexOf('综合来看');
+    const lead =
+      firstIdx > 0 ? text.slice(0, firstIdx).trim() : '';
+    const outlook =
+      outlookIdx >= 0 ? text.slice(outlookIdx).trim() : '';
+    return {
+      lead,
+      pillars: RESEARCH_DIRECTION_SUMMARY_PILLARS.map((item) => ({
+        title: item.title,
+        body: item.body.trim(),
+      })),
+      outlook,
+    };
+  }
+
+  // Generic parse for streaming partial text / non-mock payloads.
+  const blocks = text
+    .split(/\n\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
   let lead = '';
-  const firstTitleIndex = RESEARCH_PILLAR_TITLES.reduce((min, title) => {
-    const idx = remaining.indexOf(`${title}：`);
-    if (idx < 0) {
-      return min;
-    }
-    return min < 0 ? idx : Math.min(min, idx);
-  }, -1);
-
-  if (firstTitleIndex > 0) {
-    lead = remaining.slice(0, firstTitleIndex).trim();
-    remaining = remaining.slice(firstTitleIndex);
-  } else if (firstTitleIndex < 0) {
-    if (remaining.startsWith('综合来看')) {
-      return { lead: '', pillars: [], outlook: remaining };
-    }
-    return { lead: remaining, pillars: [], outlook: '' };
-  }
-
   const pillars: { title: string; body: string }[] = [];
-  for (let i = 0; i < RESEARCH_PILLAR_TITLES.length; i += 1) {
-    const title = RESEARCH_PILLAR_TITLES[i]!;
-    const marker = `${title}：`;
-    const start = remaining.indexOf(marker);
-    if (start < 0) {
-      break;
+  let outlook = '';
+
+  for (const block of blocks) {
+    if (block.startsWith('综合来看')) {
+      outlook = outlook ? `${outlook}\n\n${block}` : block;
+      continue;
     }
-    const bodyStart = start + marker.length;
-    const nextTitle = RESEARCH_PILLAR_TITLES[i + 1];
-    let end = remaining.length;
-    if (nextTitle) {
-      const nextIdx = remaining.indexOf(`${nextTitle}：`, bodyStart);
-      if (nextIdx >= 0) {
-        end = nextIdx;
+    const pillar = parsePillarBlock(block);
+    if (pillar) {
+      pillars.push(pillar);
+      continue;
+    }
+    if (!pillars.length && !outlook) {
+      lead = lead ? `${lead}\n\n${block}` : block;
+    } else if (!outlook) {
+      // Trailing prose without title marker folds into last pillar body.
+      const last = pillars[pillars.length - 1];
+      if (last) {
+        last.body = `${last.body}\n\n${block}`.trim();
+      } else {
+        lead = lead ? `${lead}\n\n${block}` : block;
       }
+    } else {
+      outlook = `${outlook}\n\n${block}`;
     }
-    const outlookIdx = remaining.indexOf('综合来看', bodyStart);
-    if (outlookIdx >= 0 && outlookIdx < end) {
-      end = outlookIdx;
-    }
-    pillars.push({
-      title,
-      body: remaining.slice(bodyStart, end).trim(),
-    });
-    remaining = remaining.slice(end);
   }
 
-  const outlook = remaining.trim();
   if (!lead && !pillars.length && !outlook) {
     return { lead: text, pillars: [], outlook: '' };
   }
@@ -598,11 +630,25 @@ interface ResearchDirectionPanelProps {
   expertsSlot: ReactNode;
 }
 
+type DemandDirectionDetail = {
+  title: string;
+  body: string;
+};
+
+function demandDirectionFields(item: DemandDirectionDetail): PolicyField[] {
+  return [
+    { label: '需求方向', value: item.title },
+    { label: '简介', value: item.body },
+  ];
+}
+
 function ResearchDirectionPanel({
   result,
   expertsSlot,
   streaming,
 }: ResearchDirectionPanelProps & { streaming?: boolean }) {
+  const [detail, setDetail] = useState<DemandDirectionDetail | null>(null);
+  const [interviewOpen, setInterviewOpen] = useState(false);
   const hasSummary = Boolean(result.summary?.trim());
   const showSummary = hasSummary || Boolean(streaming);
   const view = buildResearchSummaryView(result.summary ?? '');
@@ -611,124 +657,193 @@ function ResearchDirectionPanel({
     Boolean(view.lead) &&
     view.pillars.length === 0 &&
     !view.outlook;
-  const showCaretOnLastPillar =
-    Boolean(streaming) &&
-    view.pillars.length > 0 &&
-    !view.outlook;
   const showCaretOnOutlook = Boolean(streaming) && Boolean(view.outlook);
 
   return (
-		<div className={styles.panel}>
-			<section className={styles.section} aria-label="专家展示">
-				<div className={styles.sectionHead}>
-					<Typography.Text className={styles.sectionTitle}>
-						一、专家展示
-					</Typography.Text>
-				</div>
-				{expertsSlot}
-				{result.recommendReason?.trim() ? (
-					<div className={styles.recommendReasonCard}>
-						<Typography.Text className={styles.summaryLayerLabel}>
-							推荐理由
-						</Typography.Text>
-						<MarkdownContent
-							content={result.recommendReason}
-							className={styles.summaryText}
-						/>
-					</div>
-				) : null}
-			</section>
+    <div className={styles.panel}>
+      <section className={styles.section} aria-label="专家展示">
+        <div className={styles.sectionHead}>
+          <Typography.Text className={styles.sectionTitle}>
+            一、专家展示
+          </Typography.Text>
+        </div>
+        {expertsSlot}
+        {result.recommendReason?.trim() ? (
+          <div className={styles.recommendReasonCard}>
+            <Typography.Text className={styles.summaryLayerLabel}>
+              推荐理由
+            </Typography.Text>
+            <MarkdownContent
+              content={result.recommendReason}
+              className={styles.summaryText}
+            />
+          </div>
+        ) : null}
+      </section>
 
-			{showSummary ? (
-				<section className={styles.summaryStack} aria-label="研发方向总结">
-					<div className={styles.sectionHead}>
-						<Typography.Text className={styles.sectionTitle}>
-							二、企业潜在需求
-							{streaming ? (
-								<span className={styles.streamingHint}>生成中</span>
-							) : null}
-						</Typography.Text>
-					</div>
+      {showSummary ? (
+        <section className={styles.summaryStack} aria-label="企业潜在需求">
+          <div className={styles.sectionHead}>
+            <Typography.Text className={styles.sectionTitle}>
+              二、企业潜在需求
+              {streaming ? (
+                <span className={styles.streamingHint}>生成中</span>
+              ) : null}
+            </Typography.Text>
+          </div>
 
-					{!hasSummary ? (
-						<div className={styles.summaryCard}>
-							<Typography.Paragraph className={styles.summaryText}>
-								正在生成…
-								<span className={styles.typingCaret} aria-hidden="true" />
-							</Typography.Paragraph>
-						</div>
-					) : (
-						<div className={styles.summaryLayers}>
-							{view.lead ? (
-								<div className={styles.summaryLeadCard}>
-									<Typography.Text className={styles.summaryLayerLabel}>
-										企业潜在需求总结
-									</Typography.Text>
-									<Typography.Paragraph className={styles.summaryText}>
-										{view.lead}
-										{showCaretOnLead ? (
-											<span className={styles.typingCaret} aria-hidden="true" />
-										) : null}
-									</Typography.Paragraph>
-								</div>
-							) : null}
+          {!hasSummary ? (
+            <div className={styles.summaryCard}>
+              <Typography.Paragraph className={styles.summaryText}>
+                正在生成…
+                <span className={styles.typingCaret} aria-hidden="true" />
+              </Typography.Paragraph>
+            </div>
+          ) : (
+            <div className={styles.summaryLayers}>
+              {view.lead ? (
+                <div className={styles.summaryLeadCard}>
+                  <Typography.Text className={styles.summaryLayerLabel}>
+                    企业潜在需求总结
+                  </Typography.Text>
+                  <Typography.Paragraph className={styles.summaryText}>
+                    {view.lead}
+                    {showCaretOnLead ? (
+                      <span className={styles.typingCaret} aria-hidden="true" />
+                    ) : null}
+                  </Typography.Paragraph>
+                </div>
+              ) : null}
 
-							{view.pillars.length > 0 ? (
-								<div className={styles.summaryPillarList}>
-									<Typography.Text className={styles.summaryLayerLabel}>
-										潜在需求方向
-									</Typography.Text>
-									{view.pillars.map((item, index) => {
-										const isLast = index === view.pillars.length - 1;
-										return (
-											<article
-												key={item.title}
-												className={styles.summaryPillarCard}
-											>
-												<div className={styles.summaryPillarHead}>
-													<span className={styles.summaryPillarIndex}>
-														{String(index + 1).padStart(2, "0")}
-													</span>
-													<Typography.Text
-														className={styles.summaryPillarTitle}
-													>
-														{item.title}
-													</Typography.Text>
-												</div>
-												<Typography.Paragraph className={styles.summaryText}>
-													{item.body}
-													{showCaretOnLastPillar && isLast ? (
-														<span
-															className={styles.typingCaret}
-															aria-hidden="true"
-														/>
-													) : null}
-												</Typography.Paragraph>
-											</article>
-										);
-									})}
-								</div>
-							) : null}
+              {view.pillars.length > 0 ? (
+                <div className={styles.demandDirectionBlock}>
+                  <Typography.Text className={styles.summaryLayerLabel}>
+                    潜在需求方向
+                    <span className={styles.count}>{view.pillars.length}</span>
+                  </Typography.Text>
+                  <div className={styles.cardList}>
+                    {view.pillars.map((item) => (
+                      <PolicyEntryCard
+                        key={item.title}
+                        title={item.title}
+                        fields={demandDirectionFields(item)}
+                        onOpen={() =>
+                          setDetail({ title: item.title, body: item.body })
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
-							{view.outlook ? (
-								<div className={styles.summaryOutlookCard}>
-									<Typography.Text className={styles.summaryLayerLabel}>
-										综合研判
-									</Typography.Text>
-									<Typography.Paragraph className={styles.summaryText}>
-										{view.outlook}
-										{showCaretOnOutlook ? (
-											<span className={styles.typingCaret} aria-hidden="true" />
-										) : null}
-									</Typography.Paragraph>
-								</div>
-							) : null}
-						</div>
-					)}
-				</section>
-			) : null}
-		</div>
-	);
+              {view.outlook ? (
+                <div className={styles.summaryOutlookCard}>
+                  <Typography.Text className={styles.summaryLayerLabel}>
+                    综合研判
+                  </Typography.Text>
+                  <Typography.Paragraph className={styles.summaryText}>
+                    {view.outlook}
+                    {showCaretOnOutlook ? (
+                      <span className={styles.typingCaret} aria-hidden="true" />
+                    ) : null}
+                  </Typography.Paragraph>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      <Drawer
+        title={
+          <div className={styles.policyDetailTitle}>
+            <span className={styles.policyDetailName}>
+              {detail?.title ?? '详情'}
+            </span>
+            <span className={styles.policyDetailBadge}>潜在需求</span>
+          </div>
+        }
+        extra={
+          detail ? (
+            <Button
+              type="primary"
+              size="small"
+              className={styles.interviewApplyBtn}
+              onClick={() => setInterviewOpen(true)}
+            >
+              需求面谈
+            </Button>
+          ) : null
+        }
+        placement="right"
+        width={440}
+        open={Boolean(detail)}
+        onClose={() => {
+          setDetail(null);
+          setInterviewOpen(false);
+        }}
+        destroyOnHidden
+        className={styles.policyDetailDrawer}
+        styles={{ body: { paddingTop: 12 } }}
+      >
+        {detail ? (
+          <div className={styles.policyDetailBody}>
+            <div className={styles.policyDetailBlock}>
+              <Typography.Text className={styles.policyDetailBlockTitle}>
+                基本信息
+              </Typography.Text>
+              <div className={styles.policyDetailFields}>
+                <FieldRows fields={demandDirectionFields(detail)} />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Drawer>
+
+      <Modal
+        open={interviewOpen}
+        onCancel={() => setInterviewOpen(false)}
+        footer={null}
+        centered
+        width={420}
+        destroyOnHidden
+        className={styles.interviewModal}
+        styles={{
+          body: { padding: '8px 8px 4px' },
+        }}
+      >
+        <div className={styles.interviewModalBody}>
+          <Typography.Title level={5} className={styles.interviewModalTitle}>
+            想要发布或对接需求、成果吗？
+          </Typography.Title>
+          <Typography.Paragraph className={styles.interviewModalLead}>
+            只差一步之遥！
+          </Typography.Paragraph>
+          <Typography.Paragraph className={styles.interviewModalDesc}>
+            个人用户请先认证成为技术经理人或通过单位账号登录后才能享受全部平台功能。
+          </Typography.Paragraph>
+          <div className={styles.interviewModalActions}>
+            <Button
+              className={styles.interviewModalLater}
+              onClick={() => setInterviewOpen(false)}
+            >
+              稍后再说
+            </Button>
+            <Button
+              type="primary"
+              className={styles.interviewModalCertify}
+              onClick={() => {
+                setInterviewOpen(false);
+                message.info('认证功能即将开放');
+              }}
+            >
+              去认证
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
 }
 
 

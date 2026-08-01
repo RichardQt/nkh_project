@@ -965,8 +965,7 @@
 }
 
 .summaryLeadCard,
-.summaryOutlookCard,
-.summaryPillarCard {
+.summaryOutlookCard {
   min-width: 0;
   padding: 14px;
   background: var(--surface);
@@ -988,40 +987,93 @@
   background: color-mix(in srgb, var(--surface-muted) 72%, var(--surface));
 }
 
-.summaryPillarList {
+.demandDirectionBlock {
   display: grid;
   gap: 10px;
   min-width: 0;
 }
 
-.summaryPillarHead {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.summaryPillarIndex {
+.demandDirectionBlock .summaryLayerLabel {
   display: inline-flex;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
+  gap: 8px;
   align-items: center;
-  justify-content: center;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  background: var(--primary-soft);
-  border-radius: 8px;
+  margin-bottom: 0 !important;
 }
 
-.summaryPillarTitle {
-  margin: 0 !important;
+.interviewApplyBtn {
+  flex-shrink: 0;
+  height: 28px !important;
+  padding-inline: 12px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
+}
+
+.interviewModal :global(.ant-modal-content) {
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+}
+
+.interviewModal :global(.ant-modal-close) {
+  top: 14px;
+  inset-inline-end: 14px;
+}
+
+.interviewModalBody {
+  display: grid;
+  gap: 0;
+  text-align: center;
+}
+
+.interviewModalTitle {
+  margin: 8px 0 16px !important;
   color: var(--text) !important;
+  font-size: 17px !important;
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+}
+
+.interviewModalLead {
+  margin: 0 0 6px !important;
+  color: var(--text-secondary) !important;
   font-size: 14px !important;
-  font-weight: 650 !important;
-  line-height: 1.4 !important;
+  font-weight: 500 !important;
+  line-height: 1.55 !important;
+}
+
+.interviewModalDesc {
+  margin: 0 auto 24px !important;
+  max-width: 32em;
+  color: var(--text-secondary) !important;
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+}
+
+.interviewModalActions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  padding-bottom: 8px;
+}
+
+.interviewModalLater {
+  min-width: 104px;
+  height: 36px !important;
+  border-radius: 6px !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border-strong) !important;
+}
+
+.interviewModalLater:hover {
+  color: var(--text) !important;
+  border-color: var(--text-tertiary) !important;
+}
+
+.interviewModalCertify {
+  min-width: 104px;
+  height: 36px !important;
+  border-radius: 6px !important;
+  font-weight: 500 !important;
 }
 
 .recommendReasonCard {
