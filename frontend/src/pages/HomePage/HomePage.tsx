@@ -39,8 +39,12 @@ const DEFAULT_SUGGESTED_QUESTIONS = [
 /** 各首页模块对应的推荐问题 */
 const MODULE_SUGGESTED_QUESTIONS: Record<AgentKey, readonly string[]> = {
 	policy_recommend: ["边缘智能研究院南京有限公司"],
-	achievement_eval: ["一种同质外延生长单晶金刚石的籽晶衬底真空钎焊方法"],
-	research_direction: ["边缘智能研究院南京有限公司"],
+	achievement_eval: [
+		`一种同质外延生长单晶金刚石的籽晶衬底真空钎焊方法，大尺寸单晶金刚石同质外延制备、超硬精密加工刀具基材、高频光学窗口金刚石、航天抗辐照金刚石元件、半导体散热金刚石衬底、微波等离子体沉积装备配套籽晶工装。技术价值：1.钎焊后籽晶与钼衬底剪切结合强度达 10MPa，彻底解决气流移位问题，金刚石生长温场稳定；2.界面热导率由 30W/m・K 提升至 100W/m・K，有效抑制金刚石表面高温石墨化；3.用 Ni 基多元焊料相容性优异，不会产生过厚有害反应层，保证单晶生长低缺陷、高纯度；4.整套清洗、真空钎焊流程可直接配套现有 MWCVD 沉积设备，无需大规模改造产线。
+应用现状：完成多批次籽晶衬底钎焊试验与金刚石外延生长对比验证，拉曼光谱证明单晶质量显著提升，仅停留在实验室试样制备，暂未对接金刚石量产企业实现工程化落地。
+帮我对该成果进行评价`,
+	],
+	research_direction: ["边缘智能研究院"],
 	achievement_discover: ["灌浆材料存在泌水问题，有哪些好的成果能推荐？"],
 	expert_discover: ["医学领域有哪些专家？"],
 	demand_discover: ["骨科手术影像系统需求有哪些？"],
@@ -327,22 +331,29 @@ export default function HomePage() {
 								<span className={styles.suggestionCaret} aria-hidden />
 								<p className={styles.suggestionHint}>猜你想问：</p>
 								<ul className={styles.suggestionList}>
-									{suggestedQuestions.map((question) => (
-										<li key={question}>
-											<button
-												type="button"
-												className={styles.suggestionItem}
-												role="option"
-												onMouseDown={(event) => {
-													// 阻止按钮抢焦点导致输入框 blur 后弹层先关
-													event.preventDefault();
-												}}
-												onClick={() => pickSuggestion(question)}
-											>
-												{question}
-											</button>
-										</li>
-									))}
+									{suggestedQuestions.map((question) => {
+										const label =
+											question.length > 50
+												? `${question.slice(0, 20)}...`
+												: question;
+										return (
+											<li key={question}>
+												<button
+													type="button"
+													className={styles.suggestionItem}
+													role="option"
+													title={question}
+													onMouseDown={(event) => {
+														// 阻止按钮抢焦点导致输入框 blur 后弹层先关
+														event.preventDefault();
+													}}
+													onClick={() => pickSuggestion(question)}
+												>
+													{label}
+												</button>
+											</li>
+										);
+									})}
 								</ul>
 							</div>
 						) : null}

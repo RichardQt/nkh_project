@@ -61,6 +61,14 @@ export interface ChatStreamCallbacks {
   onWebSearch?: (payload: WebSearchPayload) => void;
   /** achievement_eval: event score (dimension scores). */
   onScore?: (payload: Record<string, unknown>) => void;
+  /** policy_recommend: event policy_match (province/city fully|inadequate). */
+  onPolicyMatch?: (payload: Record<string, unknown>) => void;
+  /** research_direction: standalone event keywords (keyword list). */
+  onKeywords?: (payload: OptimizedQueryPayload) => void;
+  /** research_direction: event recommended_expert (recommend reason). */
+  onRecommendedExpert?: (payload: { reason: string }) => void;
+  /** research_direction: event research_directions (demand pillars). */
+  onResearchDirections?: (payload: Record<string, unknown>) => void;
   onComplete: () => void;
   onError: (error: Error) => void;
 }
@@ -577,10 +585,11 @@ function parseWebSearch(data: string): WebSearchPayload | null {
       return null;
     }
     const title = typeof record.title === 'string' ? record.title.trim() : '';
-    const brief = typeof record.brief === 'string' ? record.brief : '';
-    if (!title || !brief.trim()) {
+    // Render whatever upstream returns; empty URL is still a valid hit.
+    if (!title) {
       return null;
     }
+    const brief = typeof record.brief === 'string' ? record.brief : '';
     const urlRaw =
       typeof record.URL === 'string'
         ? record.URL
@@ -593,7 +602,106 @@ function parseWebSearch(data: string): WebSearchPayload | null {
   }
 }
 
+function parseKeywordsEvent(data: string): OptimizedQueryPayload | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+    const keywords: string[] = [];
+    if (Array.isArray(record.keywords)) {
+      for (const item of record.keywords) {
+        if (typeof item === 'string' && item.trim()) {
+          keywords.push(item.trim());
+        }
+      }
+    }
+    const query =
+      typeof record.query === 'string'
+        ? record.query.trim()
+        : keywords.length
+          ? keywords.join('、')
+          : '';
+    if (!keywords.length && !query) {
+      return null;
+    }
+    return { keywords, query };
+  } catch {
+    return null;
+  }
+}
+
+function parseRecommendedExpert(
+  data: string,
+): { reason: string } | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    if (!record) {
+      return null;
+    }
+    const reason =
+      typeof record.reason === 'string'
+        ? record.reason
+        : typeof record.recommend_reason === 'string'
+          ? record.recommend_reason
+          : '';
+    if (!reason.trim()) {
+      return null;
+    }
+    return { reason };
+  } catch {
+    return null;
+  }
+}
+
+function parseResearchDirections(
+  data: string,
+): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(data) as unknown;
+    // Backend may emit a bare array of {title, reason}.
+    if (Array.isArray(parsed)) {
+      return { directions: parsed };
+    }
+    const record = asRecord(parsed);
+    if (!record) {
+      return null;
+    }
+    // Unwrap common gateway envelopes so ChatPage always sees directions[].
+    for (const wrapKey of ['data', 'result', 'payload', 'body']) {
+      const nested = record[wrapKey];
+      if (Array.isArray(nested)) {
+        return { directions: nested };
+      }
+      const nestedRecord = asRecord(nested);
+      if (nestedRecord) {
+        if (Array.isArray(nestedRecord.directions)) {
+          return nestedRecord;
+        }
+        if (Array.isArray(nestedRecord.items)) {
+          return { directions: nestedRecord.items, ...nestedRecord };
+        }
+      }
+    }
+    if (Array.isArray(record.items) && !Array.isArray(record.directions)) {
+      return { ...record, directions: record.items };
+    }
+    return record;
+  } catch {
+    return null;
+  }
+}
+
 function parseScorePayload(data: string): Record<string, unknown> | null {
+  try {
+    const record = asRecord(JSON.parse(data) as unknown);
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+function parsePolicyMatch(data: string): Record<string, unknown> | null {
   try {
     const record = asRecord(JSON.parse(data) as unknown);
     return record;
@@ -1118,6 +1226,9 @@ export function startChatStream(
         frame: NonNullable<ReturnType<typeof parseSseChunk>>,
       ): Promise<boolean> => {
         const eventName = frame.event.trim().toLowerCase();
+        if (eventName === 'recommended_expert' || eventName === 'research_directions') {
+          console.log('[chatStream] dispatch', eventName, frame.data.slice(0, 200));
+        }
 
         if (eventName === 'meta') {
           try {
@@ -1222,6 +1333,47 @@ export function startChatStream(
           const payload = parseScorePayload(frame.data);
           if (payload) {
             callbacks.onScore?.(payload);
+          }
+          return true;
+        }
+
+        if (
+          eventName === 'policy_match' ||
+          eventName === 'policymatch'
+        ) {
+          const payload = parsePolicyMatch(frame.data);
+          if (payload) {
+            callbacks.onPolicyMatch?.(payload);
+          }
+          return true;
+        }
+
+        if (eventName === 'keywords' || eventName === 'keyword') {
+          const payload = parseKeywordsEvent(frame.data);
+          if (payload) {
+            callbacks.onKeywords?.(payload);
+          }
+          return true;
+        }
+
+        if (
+          eventName === 'recommended_expert' ||
+          eventName === 'recommendedexpert'
+        ) {
+          const payload = parseRecommendedExpert(frame.data);
+          if (payload) {
+            callbacks.onRecommendedExpert?.(payload);
+          }
+          return true;
+        }
+
+        if (
+          eventName === 'research_directions' ||
+          eventName === 'researchdirections'
+        ) {
+          const payload = parseResearchDirections(frame.data);
+          if (payload) {
+            callbacks.onResearchDirections?.(payload);
           }
           return true;
         }

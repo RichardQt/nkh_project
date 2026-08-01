@@ -20,10 +20,11 @@ import type {
 } from './chatStream';
 import type { WorkflowNodeEvent } from '../types/chat';
 
-/** Mock-driven scenes, including achievement_eval demo keyword path. */
+/** Mock-driven scenes, including demo keyword paths. */
 export type SceneMockStreamAgentKey =
   | SceneMockAgentKey
-  | 'achievement_eval';
+  | 'achievement_eval'
+  | 'policy_recommend';
 
 export interface SceneMockStreamCallbacks extends ChatStreamCallbacks {
   onSearchPreview?: (preview: SearchPreviewState) => void;
@@ -72,7 +73,7 @@ function optimizedQueryFor(
     return `${base} 政策 申报`;
   }
   if (agentKey === 'achievement_eval') {
-    return '单晶金刚石籽晶固定工艺、可行性评估';
+    return "单晶金刚石、金刚石籽晶、钼衬底、同质外延、MWCVD";
   }
   return `${base} 研发方向 专家团队 智慧医疗`;
 }

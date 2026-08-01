@@ -565,6 +565,11 @@ async def stream_chat(
     ``clarify``, repeated ``token``, ``related_entries``, ``done``
     (and optional ``error`` before ``done``). For ``achievement_eval`` also
     forwards ``optimized_query``, ``section_stream``, ``progress``, ``web_search``, ``score``.
+    For ``policy_recommend`` / ``policy_qa`` also forwards ``optimized_query``,
+    ``section_stream``, ``policy_match``.
+    For ``research_direction`` also forwards ``keywords``, ``section_stream``,
+    ``progress``, ``web_search``, ``related_entries``, ``recommended_expert``,
+    ``research_directions``.
     Upstream ``final_answer`` is consumed by Backend A and is not forwarded
     to the frontend.
 

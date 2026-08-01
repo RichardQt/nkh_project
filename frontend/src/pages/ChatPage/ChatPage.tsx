@@ -44,6 +44,7 @@ import {
 import { getAgent } from '../../data/agents';
 import { resolveKgQueries } from '../../data/kgFieldMap';
 import {
+  ACHIEVEMENT_EVAL_TITLE,
   sceneIntroCopy,
   scenePlaceholder,
 } from '../../data/sceneMocks';
@@ -63,7 +64,7 @@ import {
   type SessionLogLine,
   type SessionLogsConnection,
 } from '../../services/sessionLogs';
-import { startSceneMockStream, startNoDataStream } from '../../services/sceneMockStream';
+import { startSceneMockStream } from '../../services/sceneMockStream';
 import type { AgentKey } from '../../types/agent';
 import type {
   AnswerTurn,
@@ -81,8 +82,15 @@ import type {
 import type { KgQueryTarget } from '../../types/kg';
 import {
   buildAchievementEvalFromScore,
-  isSceneMockAgentKey,
+  buildPolicyRecommendFromMatch,
+  buildResearchDirectionsFromPayload,
+  ensureResearchDirectionResult,
   patchAchievementEvalReason,
+  patchPolicyRecommendReason,
+  patchResearchDirections,
+  patchResearchExperts,
+  patchResearchRecommendReason,
+  patchResearchSectionFields,
 } from '../../types/scene';
 import styles from './ChatPage.module.css';
 
@@ -140,11 +148,13 @@ function createIntroMessage(
     content:
       agentKey === 'achievement_eval'
         ? sceneIntroCopy('achievement_eval')
-        : isSceneMockAgentKey(agentKey)
-          ? sceneIntroCopy(agentKey)
-          : scene
-            ? `当前场景：${scene.label}。${CHAT_UI.greeting}`
-            : CHAT_UI.greeting,
+        : agentKey === 'policy_recommend'
+          ? sceneIntroCopy('policy_recommend')
+          : agentKey === 'research_direction'
+            ? sceneIntroCopy('research_direction')
+            : scene
+              ? `当前场景：${scene.label}。${CHAT_UI.greeting}`
+              : CHAT_UI.greeting,
     status: 'success',
     kind: 'intro',
   };
@@ -357,6 +367,7 @@ const INTENT_LABELS: Record<string, string> = {
   enterprises: '找企业',
   policies: '政策推荐',
   policy_recommend: '政策推荐',
+  policy_qa: '政策推荐',
   achievement_eval: '成果评估',
   research_direction: '研究方向',
   platforms: '找平台',
@@ -414,6 +425,8 @@ function detectSceneRenderMode(
       token === 'policy_recommend' ||
       token === 'policies' ||
       token === 'policy' ||
+      token === 'policy_qa' ||
+      token === 'policyqa' ||
       raw.includes('政策推荐')
     ) {
       return 'policy_recommend';
@@ -2270,145 +2283,31 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         );
       };
 
-      if (isSceneMockAgentKey(agentKey)) {
-        // 关键词门控：命中场景演示关键词才走 mock，否则走无数据流程
-        // achievement_eval 已走真实 /api/chat/stream，不在此分支
-        const hitsSceneDemoKeyword = question.includes('边缘智能研究');
-        if (!hitsSceneDemoKeyword) {
-          requestRef.current = startNoDataStream(
-            { agentKey, message: question },
-            {
-              onNodeStart: (event) => {
-                if (
-                  !isActiveTarget() ||
-                  (event.node !== 'intent_classify' &&
-                    event.node !== 'followup_check' &&
-                    event.node !== 'clarify' &&
-                    event.node !== 'retrieval')
-                ) {
-                  return;
-                }
-                patchTarget((target) => ({
-                  ...target,
-                  thoughtState: updateThoughtNode(
-                    target.thoughtState,
-                    event,
-                    'start',
-                  ),
-                  status: 'updating',
-                }));
-              },
-              onNodeEnd: (event) => {
-                if (
-                  !isActiveTarget() ||
-                  (event.node !== 'intent_classify' &&
-                    event.node !== 'followup_check' &&
-                    event.node !== 'clarify' &&
-                    event.node !== 'retrieval')
-                ) {
-                  return;
-                }
-                patchTarget((target) => ({
-                  ...target,
-                  thoughtState: updateThoughtNode(
-                    target.thoughtState,
-                    event,
-                    'end',
-                  ),
-                  status: 'updating',
-                }));
-              },
-              onToken: (content) => {
-                if (!isActiveTarget()) return;
-                // Empty token only advances 深度思考; non-empty would be shown
-                // in modelStream, so no-data path must not stream mock copy.
-                patchTarget((target) => ({
-                  ...target,
-                  ...(content
-                    ? {
-                        thinkContent: `${target.thinkContent ?? ''}${content}`,
-                      }
-                    : {}),
-                  thoughtState: activateReasoning(target.thoughtState),
-                  status: 'updating',
-                }));
-              },
-              onNoData: (msg) => {
-                if (!isActiveTarget()) return;
-                patchTarget((target) => ({
-                  ...target,
-                  content: msg,
-                  status: 'updating',
-                }));
-              },
-              onComplete: () => {
-                if (!isActiveTarget()) return;
-                activeAnswerRef.current = null;
-                activeTurnRef.current = null;
-                requestRef.current = null;
-                setRequesting(false);
-                sessionStorage.removeItem(pendingStorageKey(sessionKey));
-                setMessages((current) => {
-                  const next = updateActiveTarget(
-                    current,
-                    answerId,
-                    turnId,
-                    (target) => ({
-                      ...target,
-                      status: 'success',
-                      thoughtState: completeThoughtState(
-                        target.thoughtState,
-                        Boolean(target.content?.trim()),
-                      ),
-                    }),
-                  );
-                  schedulePersist(next);
-                  return next;
-                });
-              },
-              onError: (error) => {
-                if (!isActiveTarget()) return;
-                activeAnswerRef.current = null;
-                activeTurnRef.current = null;
-                requestRef.current = null;
-                setRequesting(false);
-                if (error.name !== 'AbortError') {
-                  sessionStorage.removeItem(pendingStorageKey(sessionKey));
-                }
-                const fallbackMessage =
-                  error.name === 'AbortError'
-                    ? '已停止生成。'
-                    : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
-                setMessages((current) => {
-                  const next = updateActiveTarget(
-                    current,
-                    answerId,
-                    turnId,
-                    (target) => ({
-                      ...target,
-                      status: error.name === 'AbortError' ? 'abort' : 'error',
-                      thoughtState: stopThoughtState(
-                        target.thoughtState,
-                        error.name === 'AbortError' ? 'abort' : 'error',
-                      ),
-                      content:
-                        error.name === 'AbortError'
-                          ? target.content || fallbackMessage
-                          : fallbackMessage,
-                    }),
-                  );
-                  schedulePersist(next);
-                  return next;
-                });
-              },
-            },
+      // 成果评估：仅完全命中演示关键词时走本地 mock，否则走真实 /api/chat/stream
+      const hitsAchievementEvalDemo =
+        agentKey === 'achievement_eval' &&
+        (() => {
+          const q = question.trim();
+          return (
+            q === '同质外延生长单晶金刚石的籽晶衬底' ||
+            q === ACHIEVEMENT_EVAL_TITLE
           );
-          return;
-        }
+        })();
 
+      // 政策推荐：输入包含「边缘智能研究院」走本地 mock，否则走真实 /api/chat/stream
+      const hitsPolicyRecommendDemo =
+        agentKey === 'policy_recommend' &&
+        question.includes('边缘智能研究院');
+
+      // 研究方向：完全输入「边缘智能研究院」走本地 mock，否则走真实 /api/chat/stream
+      const hitsResearchDirectionDemo =
+        agentKey === 'research_direction' &&
+        question.trim() === '边缘智能研究院';
+
+      if (hitsAchievementEvalDemo) {
         requestRef.current = startSceneMockStream(
           {
-            agentKey,
+            agentKey: 'achievement_eval',
             message: question,
           },
           {
@@ -2459,7 +2358,304 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               }));
             },
             onSuggestedQuestions: () => {
-              // 政策推荐 / 成果评估 / 研究方向 mock 路径不展示推荐问题
+              // 成果评估 mock 路径不展示推荐问题
+            },
+            onToken: (content) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thinkContent: `${target.thinkContent ?? ''}${content}`,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onRelatedEntries: () => {
+              // 成果评估 mock 不依赖 related_entries
+            },
+            onSearchPreview: (preview) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                searchPreview: preview,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onSceneResult: (result) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                sceneResult: result,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onComplete: () => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              activeAnswerRef.current = null;
+              activeTurnRef.current = null;
+              requestRef.current = null;
+              setRequesting(false);
+              sessionStorage.removeItem(pendingStorageKey(sessionKey));
+              setMessages((current) => {
+                const next = updateActiveTarget(
+                  current,
+                  answerId,
+                  turnId,
+                  finalizeStreamTarget,
+                );
+                schedulePersist(next);
+                return next;
+              });
+            },
+            onError: (error) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              activeAnswerRef.current = null;
+              activeTurnRef.current = null;
+              requestRef.current = null;
+              setRequesting(false);
+              if (error.name !== 'AbortError') {
+                sessionStorage.removeItem(pendingStorageKey(sessionKey));
+              }
+              const fallbackMessage =
+                error.name === 'AbortError'
+                  ? '已停止生成。'
+                  : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
+              setMessages((current) => {
+                const next = updateActiveTarget(
+                  current,
+                  answerId,
+                  turnId,
+                  (target) => ({
+                    ...target,
+                    status: error.name === 'AbortError' ? 'abort' : 'error',
+                    thoughtState: stopThoughtState(
+                      target.thoughtState,
+                      error.name === 'AbortError' ? 'abort' : 'error',
+                    ),
+                    content:
+                      error.name === 'AbortError'
+                        ? target.content || fallbackMessage
+                        : fallbackMessage,
+                  }),
+                );
+                schedulePersist(next);
+                return next;
+              });
+            },
+          },
+        );
+        return;
+      }
+
+      if (hitsPolicyRecommendDemo) {
+        requestRef.current = startSceneMockStream(
+          {
+            agentKey: 'policy_recommend',
+            message: question,
+          },
+          {
+            onMeta: ({ fields }) => {
+              if (!isActiveTarget() || !fields?.length) {
+                return;
+              }
+              patchTarget((target) => ({ ...target, displayFields: fields }));
+            },
+            onNodeStart: (event) => {
+              if (
+                !isActiveTarget() ||
+                (event.node !== 'intent_classify' &&
+                  event.node !== 'followup_check' &&
+                  event.node !== 'clarify' &&
+                  event.node !== 'retrieval')
+              ) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thoughtState: updateThoughtNode(
+                  target.thoughtState,
+                  event,
+                  'start',
+                ),
+                status: 'updating',
+              }));
+            },
+            onNodeEnd: (event) => {
+              if (
+                !isActiveTarget() ||
+                (event.node !== 'intent_classify' &&
+                  event.node !== 'followup_check' &&
+                  event.node !== 'clarify' &&
+                  event.node !== 'retrieval')
+              ) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thoughtState: updateThoughtNode(
+                  target.thoughtState,
+                  event,
+                  'end',
+                ),
+                status: 'updating',
+              }));
+            },
+            onSuggestedQuestions: () => {
+              // 政策推荐 mock 路径不展示推荐问题
+            },
+            onToken: (content) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thinkContent: `${target.thinkContent ?? ''}${content}`,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onRelatedEntries: () => {
+              // 政策推荐 mock 不依赖 related_entries
+            },
+            onSceneResult: (result) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                sceneResult: result,
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              }));
+            },
+            onComplete: () => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              activeAnswerRef.current = null;
+              activeTurnRef.current = null;
+              requestRef.current = null;
+              setRequesting(false);
+              sessionStorage.removeItem(pendingStorageKey(sessionKey));
+              setMessages((current) => {
+                const next = updateActiveTarget(
+                  current,
+                  answerId,
+                  turnId,
+                  finalizeStreamTarget,
+                );
+                schedulePersist(next);
+                return next;
+              });
+            },
+            onError: (error) => {
+              if (!isActiveTarget()) {
+                return;
+              }
+              activeAnswerRef.current = null;
+              activeTurnRef.current = null;
+              requestRef.current = null;
+              setRequesting(false);
+              if (error.name !== 'AbortError') {
+                sessionStorage.removeItem(pendingStorageKey(sessionKey));
+              }
+              const fallbackMessage =
+                error.name === 'AbortError'
+                  ? '已停止生成。'
+                  : error.message?.trim() || GENERIC_STREAM_ERROR_MESSAGE;
+              setMessages((current) => {
+                const next = updateActiveTarget(
+                  current,
+                  answerId,
+                  turnId,
+                  (target) => ({
+                    ...target,
+                    status: error.name === 'AbortError' ? 'abort' : 'error',
+                    thoughtState: stopThoughtState(
+                      target.thoughtState,
+                      error.name === 'AbortError' ? 'abort' : 'error',
+                    ),
+                    content:
+                      error.name === 'AbortError'
+                        ? target.content || fallbackMessage
+                        : fallbackMessage,
+                  }),
+                );
+                schedulePersist(next);
+                return next;
+              });
+            },
+          },
+        );
+        return;
+      }
+
+      if (hitsResearchDirectionDemo) {
+        requestRef.current = startSceneMockStream(
+          {
+            agentKey: 'research_direction',
+            message: question,
+          },
+          {
+            onMeta: ({ fields }) => {
+              if (!isActiveTarget() || !fields?.length) {
+                return;
+              }
+              patchTarget((target) => ({ ...target, displayFields: fields }));
+            },
+            onNodeStart: (event) => {
+              if (
+                !isActiveTarget() ||
+                (event.node !== 'intent_classify' &&
+                  event.node !== 'followup_check' &&
+                  event.node !== 'clarify' &&
+                  event.node !== 'retrieval')
+              ) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thoughtState: updateThoughtNode(
+                  target.thoughtState,
+                  event,
+                  'start',
+                ),
+                status: 'updating',
+              }));
+            },
+            onNodeEnd: (event) => {
+              if (
+                !isActiveTarget() ||
+                (event.node !== 'intent_classify' &&
+                  event.node !== 'followup_check' &&
+                  event.node !== 'clarify' &&
+                  event.node !== 'retrieval')
+              ) {
+                return;
+              }
+              patchTarget((target) => ({
+                ...target,
+                thoughtState: updateThoughtNode(
+                  target.thoughtState,
+                  event,
+                  'end',
+                ),
+                status: 'updating',
+              }));
+            },
+            onSuggestedQuestions: () => {
+              // 研究方向 mock 路径不展示推荐问题
             },
             onToken: (content) => {
               if (!isActiveTarget()) {
@@ -2594,8 +2790,19 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
       const isAchievementEvalMode = () =>
         resolvedSceneMode === 'achievement_eval' ||
         agentKey === 'achievement_eval';
-      /** Accumulates section_stream summary for score reason. */
+      const isPolicyRecommendMode = () =>
+        resolvedSceneMode === 'policy_recommend' ||
+        agentKey === 'policy_recommend';
+      const isResearchDirectionMode = () =>
+        resolvedSceneMode === 'research_direction' ||
+        agentKey === 'research_direction';
+      /** Accumulates section_stream summary for score / 申报建议 reason. */
       let evalSummary = '';
+      let policySummary = '';
+      /** research_direction section_stream accumulators */
+      let researchEnterpriseSummary = '';
+      let researchRequirementsSummary = '';
+      let researchOverall = '';
 
       requestRef.current = startChatStream(
         {
@@ -2747,15 +2954,165 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               };
             });
           },
+          onKeywords: (payload) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+            // research_direction: event keywords → 思维链关键词
+            if (!isResearchDirectionMode()) {
+              resolvedSceneMode = 'research_direction';
+            }
+            const keywordText =
+              payload.keywords.length > 0
+                ? payload.keywords.join('、')
+                : payload.query;
+            if (!keywordText.trim()) {
+              return;
+            }
+            patchTarget((target) => {
+              const thought = target.thoughtState ?? createThoughtState();
+              return {
+                ...target,
+                thoughtState: {
+                  ...thought,
+                  intent: {
+                    ...thought.intent,
+                    status:
+                      thought.intent.status === 'pending'
+                        ? 'success'
+                        : thought.intent.status,
+                  },
+                  clarity: {
+                    ...thought.clarity,
+                    status: 'success',
+                    needClarify: false,
+                    optimizedQuery: keywordText,
+                  },
+                  reasoning:
+                    thought.reasoning.status === 'pending'
+                      ? { status: 'loading' }
+                      : thought.reasoning,
+                },
+                status: 'updating',
+              };
+            });
+          },
           onSectionStream: (payload) => {
             if (!isActiveTarget()) {
               return;
             }
-            const section = payload.section.trim().toLowerCase();
-            // brief / summary 为成果评估 section 约定；未锁定场景时据此切换渲染
+            const sectionRaw = payload.section.trim();
+            const section = sectionRaw.toLowerCase();
+
+            // 研究方向：enterprise_summary / sum_Requirements / Overall
+            if (
+              section === 'enterprise_summary' ||
+              section === 'sum_requirements' ||
+              section === 'overall'
+            ) {
+              resolvedSceneMode = 'research_direction';
+              if (section === 'enterprise_summary') {
+                researchEnterpriseSummary += payload.content;
+                patchTarget((target) => ({
+                  ...target,
+                  thinkContent: `${target.thinkContent ?? ''}${payload.content}`,
+                  thoughtState: activateReasoning(target.thoughtState),
+                  status: 'updating',
+                }));
+                return;
+              }
+              if (section === 'sum_requirements') {
+                researchRequirementsSummary += payload.content;
+                const requirementsSummary = researchRequirementsSummary;
+                patchTarget((target) => {
+                  const scene = ensureResearchDirectionResult(
+                    target.sceneResult,
+                    {
+                      inputSummary: question,
+                      experts: target.relatedEntries,
+                    },
+                  );
+                  return {
+                    ...target,
+                    sceneResult: patchResearchSectionFields(scene, {
+                      requirementsSummary,
+                    }),
+                    thoughtState: activateReasoning(target.thoughtState),
+                    status: 'updating',
+                  };
+                });
+                return;
+              }
+              if (section === 'overall') {
+                researchOverall += payload.content;
+                const overall = researchOverall;
+                patchTarget((target) => {
+                  const scene = ensureResearchDirectionResult(
+                    target.sceneResult,
+                    {
+                      inputSummary: question,
+                      experts: target.relatedEntries,
+                    },
+                  );
+                  return {
+                    ...target,
+                    sceneResult: patchResearchSectionFields(scene, {
+                      overall,
+                    }),
+                    thoughtState: activateReasoning(target.thoughtState),
+                    status: 'updating',
+                  };
+                });
+                return;
+              }
+            }
+
+            // 政策推荐：brief → 思考区简介；summary → 申报建议
+            if (isPolicyRecommendMode()) {
+              if (section === 'brief') {
+                patchTarget((target) => ({
+                  ...target,
+                  thinkContent: `${target.thinkContent ?? ''}${payload.content}`,
+                  thoughtState: activateReasoning(target.thoughtState),
+                  status: 'updating',
+                }));
+                return;
+              }
+              if (section === 'summary') {
+                policySummary += payload.content;
+                const reason = policySummary;
+                patchTarget((target) => {
+                  const scene = target.sceneResult;
+                  if (scene?.kind === 'policy_recommend') {
+                    return {
+                      ...target,
+                      sceneResult: patchPolicyRecommendReason(scene, reason),
+                      thoughtState: activateReasoning(target.thoughtState),
+                      status: 'updating',
+                    };
+                  }
+                  return {
+                    ...target,
+                    sceneResult: {
+                      kind: 'policy_recommend',
+                      inputSummary: question,
+                      fullyMatched: { provincial: [], municipal: [] },
+                      partiallyMatched: { provincial: [], municipal: [] },
+                      recommendReason: reason,
+                    },
+                    thoughtState: activateReasoning(target.thoughtState),
+                    status: 'updating',
+                  };
+                });
+              }
+              return;
+            }
+
+            // 成果评估：brief / summary；未锁定场景时据此切换渲染
             if (
               (section === 'brief' || section === 'summary') &&
-              !isAchievementEvalMode()
+              !isAchievementEvalMode() &&
+              !isResearchDirectionMode()
             ) {
               resolvedSceneMode = 'achievement_eval';
             }
@@ -2802,11 +3159,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             }
             // 「正在联网搜索…」→ 先展示调取状态；关键词段作为检索词
             const isWebSearchProgress = messageText.includes('正在联网搜索');
-            if (!isAchievementEvalMode()) {
+            if (!isAchievementEvalMode() && !isResearchDirectionMode()) {
               if (!isWebSearchProgress) {
                 return;
               }
-              // 首页未选场景：联网搜索进度即按成果评估渲染
+              // 首页未选场景：联网搜索进度默认按成果评估渲染
               resolvedSceneMode = 'achievement_eval';
             }
             const keywordMatch = messageText.match(
@@ -2830,22 +3187,22 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             }));
           },
           onWebSearch: (payload) => {
-            // 有 web_search 即按成果评估搜索区渲染（含首页未选场景）
+            // 有 web_search 即渲染搜索区（成果评估 / 研究方向）
             if (!isActiveTarget()) {
               return;
             }
-            if (!isAchievementEvalMode()) {
+            if (!isAchievementEvalMode() && !isResearchDirectionMode()) {
               resolvedSceneMode = 'achievement_eval';
             }
             const title = payload.title.trim();
-            const snippet = payload.brief.trim();
-            if (!title || !snippet) {
+            if (!title) {
               return;
             }
+            // 接口返回什么就渲染什么（含空 brief / 空 url）
             const hit = {
               title,
-              snippet,
-              ...(payload.url ? { url: payload.url } : {}),
+              snippet: payload.brief ?? '',
+              url: payload.url ?? '',
             };
             patchTarget((target) => {
               const prev = target.searchPreview;
@@ -2897,8 +3254,111 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
               status: 'updating',
             }));
           },
+          onPolicyMatch: (payload) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+            resolvedSceneMode = 'policy_recommend';
+            const result = buildPolicyRecommendFromMatch(payload, {
+              inputSummary: question,
+              recommendReason: policySummary,
+            });
+            patchTarget((target) => {
+              const prev = target.sceneResult;
+              const reason =
+                policySummary ||
+                (prev?.kind === 'policy_recommend'
+                  ? prev.recommendReason
+                  : '');
+              return {
+                ...target,
+                sceneResult: {
+                  ...result,
+                  recommendReason: reason,
+                },
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              };
+            });
+          },
+          onRecommendedExpert: (payload) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+            resolvedSceneMode = 'research_direction';
+            const reason = payload.reason;
+            if (!reason.trim()) {
+              return;
+            }
+            patchTarget((target) => {
+              const scene = ensureResearchDirectionResult(target.sceneResult, {
+                inputSummary: question,
+                experts: target.relatedEntries,
+              });
+              return {
+                ...target,
+                sceneResult: patchResearchRecommendReason(scene, reason),
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              };
+            });
+          },
+          onResearchDirections: (payload) => {
+            if (!isActiveTarget()) {
+              return;
+            }
+            resolvedSceneMode = 'research_direction';
+            const directions = buildResearchDirectionsFromPayload(payload);
+            if (!directions.length) {
+              return;
+            }
+            patchTarget((target) => {
+              const scene = ensureResearchDirectionResult(target.sceneResult, {
+                inputSummary: question,
+                experts: target.relatedEntries,
+              });
+              // Always replace with latest non-empty directions list from B.
+              return {
+                ...target,
+                sceneResult: patchResearchDirections(scene, directions),
+                thoughtState: activateReasoning(target.thoughtState),
+                status: 'updating',
+              };
+            });
+          },
           onRelatedEntries: (payload) => {
             if (!isActiveTarget()) {
+              return;
+            }
+            // 研究方向：专家列表同时写入 sceneResult.experts（保留已有 directions 等字段）
+            if (isResearchDirectionMode()) {
+              patchTarget((target) => {
+                const scene = ensureResearchDirectionResult(
+                  target.sceneResult,
+                  { inputSummary: question },
+                );
+                const nextScene = patchResearchExperts(scene, payload);
+                return {
+                  ...target,
+                  relatedEntries: payload,
+                  // Explicit spread keeps directions / requirements / overall / reason.
+                  sceneResult: {
+                    ...nextScene,
+                    directions: nextScene.directions ?? scene.directions,
+                    requirementsSummary:
+                      nextScene.requirementsSummary ??
+                      scene.requirementsSummary,
+                    overall: nextScene.overall ?? scene.overall,
+                    recommendReason:
+                      nextScene.recommendReason || scene.recommendReason,
+                  },
+                  thoughtState: activateReasoning(target.thoughtState),
+                  displayFields: payload.fields.length
+                    ? payload.fields
+                    : target.displayFields,
+                  status: 'updating',
+                };
+              });
               return;
             }
             patchTarget((target) => ({
@@ -3672,9 +4132,11 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
             placeholder={
               agentKey === 'achievement_eval'
                 ? scenePlaceholder('achievement_eval')
-                : isSceneMockAgentKey(agentKey)
-                  ? scenePlaceholder(agentKey)
-                  : CHAT_UI.placeholder
+                : agentKey === 'policy_recommend'
+                  ? scenePlaceholder('policy_recommend')
+                  : agentKey === 'research_direction'
+                    ? scenePlaceholder('research_direction')
+                    : CHAT_UI.placeholder
             }
             onChange={setValue}
             onSubmit={(next) => {

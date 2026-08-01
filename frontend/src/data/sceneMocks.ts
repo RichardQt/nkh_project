@@ -195,11 +195,18 @@ export const ACHIEVEMENT_EVAL_DEFAULT_INPUT = `一种同质外延生长单晶金
 export const ACHIEVEMENT_EVAL_TITLE =
 	"一种同质外延生长单晶金刚石的籽晶衬底真空钎焊方法";
 
-export const ACHIEVEMENT_EVAL_REASON =
-	'该技术成果属于"高价值、低成熟度"型项目。其创新点在于精准锁定MWCVD制备单晶金刚石的两大行业痛点——籽晶气流移位与界面石墨化，通过Fe-Ti-Cr-Ni多元合金真空钎焊工艺将剪切结合强度提升至10MPa、界面热导率提高3倍以上，技术路线务实且与现有产线兼容性好，团队背景可靠，下游半导体散热、航天光学等战略应用领域前景广阔；但核心短板在于成熟度仅停留在实验室样件阶段，尚未经工程化量产验证，且作为制备配套工艺其直接市场规模受限于单晶金刚石产业整体发展节奏，建议以合作开发或技术许可模式联合下游企业推进中试验证，重点突破大尺寸一致性、长期热循环可靠性及量产成本等关键工程化瓶颈，若能在短期内完成中试验证，其产业化价值将显著提升。';
+export const ACHIEVEMENT_EVAL_REASON = `
+  该成果面向MWCVD单晶金刚石生长中的籽晶移位和界面散热不良问题，通过Fe-Ti-Cr-Ni多元合金薄焊片及真空保护加压钎焊，将金刚石籽晶固定在钼衬底上。成果方报告剪切结合强度达到10MPa、有效界面热导率由30提高至100W/(m·K)，
+  并完成多批次样件和外延生长对比验证。其突出优势是问题针对性强、工艺参数具体、知识产权质量高，
+  并可作为现有MWCVD设备的前道配套工艺；主要短板是当前披露证据仍处于实验室层级，
+  且作为制备配套工艺其直接市场规模受限于单晶金刚石产业整体发展节奏，
+  建议以合作开发或技术许可模式联合下游企业推进中试验证，
+  点突破大尺寸一致性、长期热循环可靠性及量产成本等关键工程化瓶颈，
+  若能在短期内完成中试验证，其产业化价值将显著提升。
+  `;
 
 export function buildSearchResults(
-	agentKey: SceneMockAgentKey | "achievement_eval",
+	agentKey: SceneMockAgentKey | "achievement_eval" | "policy_recommend",
 	question: string,
 ): { query: string; results: SearchResultItem[] } {
 	if (agentKey === "achievement_eval") {
@@ -363,21 +370,20 @@ export function buildAchievementEvalResult(
 	const dimensions = [
 		{
 			label: "创新性",
-			score: 18,
+			score: 19,
 			max: 25,
-			highlight:
-				"精准识别了MWCVD制备单晶金刚石行业的两大核心痛点（籽晶气流移位、界面热阻高导致石墨化），并提出针对性的真空钎焊成套解决方案；采用Fe-Ti-Cr-Ni多元合金焊料，在材料配方设计上具有一定创新性；将剪切结合强度提升至10MPa、界面热导率提升3倍以上，技术指标改善显著。",
+			highlight: `精准识别了MWCVD制备单晶金刚石行业的两大核心痛点（籽晶气流移位、界面热阻高导致石墨化），并提出针对性的真空钎焊成套解决方案；采用Fe-Ti-Cr-Ni多元合金焊料，在材料配方设计上具有一定创新性；将剪切结合强度提升至10MPa、界面热导率提升3倍以上，技术指标改善显著。`,
 			weakness:
 				'真空钎焊本身是较为成熟的工业技术，该成果的核心创新点更多体现在材料配方优化和工艺参数适配层面，技术路线的原创性和颠覆性相对有限，属于"应用创新"而非"原理创新"。',
 		},
 		{
 			label: "成熟度",
-			score: 13,
+			score: 16,
 			max: 25,
 			highlight:
 				"已完成多批次实验室样件制备，通过拉曼光谱验证了单晶质量提升，关键性能指标（结合强度、热导率）有明确数据支撑，处于TRL 4-5级（实验室/关键功能验证阶段）。",
 			weakness:
-				'成果自述"仅停留在实验室试样制备，暂未对接量产企业实现工程化落地"。距离产业化仍需完成：工艺稳定性验证、不同批次一致性验证、与现有产线的集成测试、成本核算、长时间运行可靠性验证等。成熟度偏低是该项成果最明显的短板。',
+				'成果自述"仅停留在实验室试样制备，暂未对接量产企业实现工程化落地"，按成果简介保守判为 TRL 4：实验室环境中的组件/关键功能验证。距离产业化仍需完成：工艺稳定性验证、不同批次一致性验证、与现有产线的集成测试、成本核算、长时间运行可靠性验证等。成熟度偏低是该项成果最明显的短板。',
 		},
 		{
 			label: "市场前景",
@@ -426,11 +432,17 @@ export function buildResearchDirectionResult(
 		experts: buildExpertPayload(),
 		recommendReason: RESEARCH_EXPERT_ROW.recommend_reason,
 		summary: RESEARCH_DIRECTION_SUMMARY,
+		requirementsSummary: RESEARCH_DIRECTION_SUMMARY_LEAD,
+		directions: RESEARCH_DIRECTION_SUMMARY_PILLARS.map((item) => ({
+			title: item.title,
+			reason: item.body,
+		})),
+		overall: RESEARCH_DIRECTION_SUMMARY_OUTLOOK,
 	};
 }
 
 export function buildSceneResult(
-	agentKey: SceneMockAgentKey,
+	agentKey: SceneMockAgentKey | "policy_recommend",
 	question: string,
 ): SceneResult {
 	if (agentKey === "policy_recommend") {
@@ -463,7 +475,7 @@ export function splitThinkingTokens(text: string): string[] {
 }
 
 export function sceneIntroCopy(
-	agentKey: SceneMockAgentKey | "achievement_eval",
+	agentKey: SceneMockAgentKey | "achievement_eval" | "policy_recommend",
 ): string {
 	if (agentKey === "policy_recommend") {
 		return "当前场景：政策推荐。请输入企业名称或企业信息，系统将按完全满足 / 部分满足分层返回省级与市级政策，支持列表与详情查看。";
@@ -475,7 +487,7 @@ export function sceneIntroCopy(
 }
 
 export function scenePlaceholder(
-	agentKey: SceneMockAgentKey | "achievement_eval",
+	agentKey: SceneMockAgentKey | "achievement_eval" | "policy_recommend",
 ): string {
 	if (agentKey === "policy_recommend") {
 		return "输入企业名称或企业信息…";

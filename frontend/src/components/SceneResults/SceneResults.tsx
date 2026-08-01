@@ -78,9 +78,9 @@ export function SearchPreviewPanel({
                   </div>
                 </div>
               ) : null}
-              {item.url ? (
-                <div className={styles.searchField}>
-                  <span className={styles.searchFieldLabel}>链接</span>
+              <div className={styles.searchField}>
+                <span className={styles.searchFieldLabel}>链接</span>
+                {item.url ? (
                   <a
                     className={styles.link}
                     href={item.url}
@@ -89,8 +89,12 @@ export function SearchPreviewPanel({
                   >
                     <LinkOutlined aria-hidden="true" /> {item.url}
                   </a>
-                </div>
-              ) : null}
+                ) : (
+                  <Typography.Text type="secondary" className={styles.searchSnippet}>
+                    暂无
+                  </Typography.Text>
+                )}
+              </div>
             </article>
           ))}
         </div>
@@ -649,9 +653,30 @@ function ResearchDirectionPanel({
 }: ResearchDirectionPanelProps & { streaming?: boolean }) {
   const [detail, setDetail] = useState<DemandDirectionDetail | null>(null);
   const [interviewOpen, setInterviewOpen] = useState(false);
-  const hasSummary = Boolean(result.summary?.trim());
+  // Prefer structured B-path fields; fall back to flattened mock summary parse.
+  const parsed = buildResearchSummaryView(result.summary ?? '');
+  const structuredDirections = Array.isArray(result.directions)
+    ? result.directions
+    : [];
+  const lead =
+    result.requirementsSummary?.trim() || parsed.lead;
+  // research_directions event always wins over summary text parse.
+  const pillars =
+    structuredDirections.length > 0
+      ? structuredDirections.map((item) => ({
+          title: item.title?.trim() || '潜在需求方向',
+          body: item.reason?.trim() || '',
+        }))
+      : parsed.pillars;
+  const outlook = result.overall?.trim() || parsed.outlook;
+  const view = { lead, pillars, outlook };
+  const hasSummary =
+    Boolean(view.lead) ||
+    view.pillars.length > 0 ||
+    Boolean(view.outlook) ||
+    Boolean(result.summary?.trim()) ||
+    structuredDirections.length > 0;
   const showSummary = hasSummary || Boolean(streaming);
-  const view = buildResearchSummaryView(result.summary ?? '');
   const showCaretOnLead =
     Boolean(streaming) &&
     Boolean(view.lead) &&

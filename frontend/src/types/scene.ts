@@ -99,6 +99,12 @@ export interface AchievementEvalResult {
   evaluations: AchievementEvalItem[];
 }
 
+/** One potential demand direction from ``event: research_directions``. */
+export interface ResearchDirectionPillar {
+  title: string;
+  reason: string;
+}
+
 export interface ResearchDirectionResult {
   kind: 'research_direction';
   inputSummary: string;
@@ -106,7 +112,17 @@ export interface ResearchDirectionResult {
   experts: RelatedEntriesPayload;
   /** Standalone recommend reason shown below expert list. */
   recommendReason: string;
+  /**
+   * Flattened summary text (mock stream / fallback parse).
+   * Real B path prefers structured fields below.
+   */
   summary: string;
+  /** section_stream sum_Requirements — 企业潜在需求总结 */
+  requirementsSummary?: string;
+  /** event research_directions — 潜在需求方向 */
+  directions?: ResearchDirectionPillar[];
+  /** section_stream Overall — 综合研判 */
+  overall?: string;
 }
 
 export type SceneResult =
@@ -114,18 +130,179 @@ export type SceneResult =
   | AchievementEvalResult
   | ResearchDirectionResult;
 
-/** Scenes still driven by local mock SSE (achievement_eval uses real /api/chat/stream). */
-export const SCENE_MOCK_AGENT_KEYS = [
-  'policy_recommend',
-  'research_direction',
-] as const;
+/**
+ * Scenes that still have a local mock demo path.
+ * research_direction / achievement_eval / policy_recommend hit mock only on demo keyword;
+ * otherwise they use real /api/chat/stream.
+ */
+export const SCENE_MOCK_AGENT_KEYS = ['research_direction'] as const;
 
 export type SceneMockAgentKey = (typeof SCENE_MOCK_AGENT_KEYS)[number];
 
 export function isSceneMockAgentKey(
   value: string | null | undefined,
 ): value is SceneMockAgentKey {
-  return value === 'policy_recommend' || value === 'research_direction';
+  return value === 'research_direction';
+}
+
+const EMPTY_RESEARCH_EXPERTS: RelatedEntriesPayload = {
+  listKey: 'expert_team',
+  fields: [],
+  items: [],
+};
+
+/** Empty research_direction scene shell for progressive SSE patches. */
+export function emptyResearchDirectionResult(
+  inputSummary = '',
+): ResearchDirectionResult {
+  return {
+    kind: 'research_direction',
+    inputSummary: inputSummary.trim(),
+    experts: EMPTY_RESEARCH_EXPERTS,
+    recommendReason: '',
+    summary: '',
+  };
+}
+
+/** Ensure target has a research_direction sceneResult (create if missing). */
+export function ensureResearchDirectionResult(
+  current: SceneResult | undefined | null,
+  options?: {
+    inputSummary?: string;
+    experts?: RelatedEntriesPayload;
+  },
+): ResearchDirectionResult {
+  if (current?.kind === 'research_direction') {
+    return current;
+  }
+  return {
+    ...emptyResearchDirectionResult(options?.inputSummary ?? ''),
+    ...(options?.experts ? { experts: options.experts } : {}),
+  };
+}
+
+/** Patch recommend reason from ``event: recommended_expert``. */
+export function patchResearchRecommendReason(
+  result: ResearchDirectionResult,
+  reason: string,
+): ResearchDirectionResult {
+  return { ...result, recommendReason: reason };
+}
+
+/** Patch experts from ``event: related_entries``. */
+export function patchResearchExperts(
+  result: ResearchDirectionResult,
+  experts: RelatedEntriesPayload,
+): ResearchDirectionResult {
+  return { ...result, experts };
+}
+
+/** Patch section_stream sum_Requirements / Overall (and optional flattened summary). */
+export function patchResearchSectionFields(
+  result: ResearchDirectionResult,
+  patch: {
+    requirementsSummary?: string;
+    overall?: string;
+    summary?: string;
+  },
+): ResearchDirectionResult {
+  return {
+    ...result,
+    ...(patch.requirementsSummary !== undefined
+      ? { requirementsSummary: patch.requirementsSummary }
+      : {}),
+    ...(patch.overall !== undefined ? { overall: patch.overall } : {}),
+    ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
+  };
+}
+
+/** Pull directions array from common B/proxy payload shapes. */
+function extractResearchDirectionsArray(
+  payload: Record<string, unknown>,
+): unknown[] {
+  const directKeys = ['directions', 'items', 'list', 'research_directions'];
+  for (const key of directKeys) {
+    const value = payload[key];
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+  for (const wrapKey of ['data', 'result', 'payload', 'body']) {
+    const nested = payload[wrapKey];
+    if (Array.isArray(nested)) {
+      return nested;
+    }
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const row = nested as Record<string, unknown>;
+      for (const key of directKeys) {
+        const value = row[key];
+        if (Array.isArray(value)) {
+          return value;
+        }
+      }
+    }
+  }
+  return [];
+}
+
+function researchDirectionText(
+  row: Record<string, unknown>,
+  keys: string[],
+): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+/** Map ``event: research_directions`` into UI pillars. */
+export function buildResearchDirectionsFromPayload(
+  payload: Record<string, unknown> | unknown[],
+): ResearchDirectionPillar[] {
+  const raw = Array.isArray(payload)
+    ? payload
+    : extractResearchDirectionsArray(payload);
+  if (!raw.length) {
+    return [];
+  }
+  const out: ResearchDirectionPillar[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const title = researchDirectionText(row, [
+      'title',
+      'name',
+      'direction',
+      'label',
+    ]);
+    const reason = researchDirectionText(row, [
+      'reason',
+      'body',
+      'content',
+      'description',
+      'desc',
+      'summary',
+      'brief',
+    ]);
+    if (!title && !reason) {
+      continue;
+    }
+    out.push({ title: title || '潜在需求方向', reason });
+  }
+  return out;
+}
+
+/** Merge directions list into an existing research result. */
+export function patchResearchDirections(
+  result: ResearchDirectionResult,
+  directions: ResearchDirectionPillar[],
+): ResearchDirectionResult {
+  return { ...result, directions };
 }
 
 /** Dimension keys from upstream ``event: score``. */
@@ -268,5 +445,160 @@ export function patchAchievementEvalReason(
     evaluations: result.evaluations.map((item, index) =>
       index === 0 ? { ...item, reason } : item,
     ),
+  };
+}
+
+function asTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function mapProvincialPolicy(
+  raw: unknown,
+  idPrefix: string,
+  index: number,
+): ProvincialPolicy | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const row = raw as Record<string, unknown>;
+  const item_name =
+    asTrimmedString(row.policy_name) || asTrimmedString(row.item_name);
+  if (!item_name) {
+    return null;
+  }
+  return {
+    id: `${idPrefix}-p-${index}`,
+    item_name,
+    level: asTrimmedString(row.source_level) || asTrimmedString(row.level) || '省级',
+    funding_amount: asTrimmedString(row.funding_amount),
+    item_category_description:
+      asTrimmedString(row.category_intro) ||
+      asTrimmedString(row.item_category_description),
+    project_description:
+      asTrimmedString(row.project_intro) ||
+      asTrimmedString(row.project_description),
+    application_requirements:
+      asTrimmedString(row.requirements) ||
+      asTrimmedString(row.application_requirements),
+    application_channel: asTrimmedString(row.application_channel),
+    application_url: asTrimmedString(row.application_url),
+    related_policy_document_name:
+      asTrimmedString(row.source_document) ||
+      asTrimmedString(row.related_policy_document_name),
+  };
+}
+
+function mapMunicipalPolicy(
+  raw: unknown,
+  idPrefix: string,
+  index: number,
+): MunicipalPolicy | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const row = raw as Record<string, unknown>;
+  const policy_category = asTrimmedString(row.policy_category);
+  const support_content = asTrimmedString(row.support_content);
+  if (!policy_category && !support_content) {
+    return null;
+  }
+  return {
+    id: `${idPrefix}-m-${index}`,
+    policy_category: policy_category || '市级政策',
+    supported_region:
+      asTrimmedString(row.support_region) ||
+      asTrimmedString(row.supported_region),
+    supported_entities:
+      asTrimmedString(row.support_target) ||
+      asTrimmedString(row.supported_entities),
+    support_content,
+    source_document: asTrimmedString(row.source_document),
+  };
+}
+
+function mapPolicyList(
+  items: unknown,
+  mapFn: (raw: unknown, idPrefix: string, index: number) => ProvincialPolicy | MunicipalPolicy | null,
+  idPrefix: string,
+): (ProvincialPolicy | MunicipalPolicy)[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  const out: (ProvincialPolicy | MunicipalPolicy)[] = [];
+  items.forEach((item, index) => {
+    const mapped = mapFn(item, idPrefix, index);
+    if (mapped) {
+      out.push(mapped);
+    }
+  });
+  return out;
+}
+
+function readMatchBucket(raw: unknown): {
+  fully: unknown[];
+  inadequate: unknown[];
+} {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { fully: [], inadequate: [] };
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    fully: Array.isArray(record.fully) ? record.fully : [],
+    inadequate: Array.isArray(record.inadequate) ? record.inadequate : [],
+  };
+}
+
+/** Map upstream ``event: policy_match`` into UI result. */
+export function buildPolicyRecommendFromMatch(
+  payload: Record<string, unknown>,
+  options?: { inputSummary?: string; recommendReason?: string },
+): PolicyRecommendResult {
+  const province = readMatchBucket(payload.province ?? payload.provincial);
+  const city = readMatchBucket(payload.city ?? payload.municipal);
+
+  const fullyProvincial = mapPolicyList(
+    province.fully,
+    mapProvincialPolicy,
+    'full',
+  ) as ProvincialPolicy[];
+  const partialProvincial = mapPolicyList(
+    province.inadequate,
+    mapProvincialPolicy,
+    'partial',
+  ) as ProvincialPolicy[];
+  const fullyMunicipal = mapPolicyList(
+    city.fully,
+    mapMunicipalPolicy,
+    'full',
+  ) as MunicipalPolicy[];
+  const partialMunicipal = mapPolicyList(
+    city.inadequate,
+    mapMunicipalPolicy,
+    'partial',
+  ) as MunicipalPolicy[];
+
+  return {
+    kind: 'policy_recommend',
+    inputSummary: options?.inputSummary?.trim() ?? '',
+    fullyMatched: {
+      provincial: fullyProvincial,
+      municipal: fullyMunicipal,
+    },
+    partiallyMatched: {
+      provincial: partialProvincial,
+      municipal: partialMunicipal,
+    },
+    recommendReason: options?.recommendReason?.trim() ?? '',
+  };
+}
+
+/** Merge streaming summary into an existing policy recommend result. */
+export function patchPolicyRecommendReason(
+  result: PolicyRecommendResult,
+  reason: string,
+): PolicyRecommendResult {
+  return {
+    ...result,
+    recommendReason: reason,
   };
 }

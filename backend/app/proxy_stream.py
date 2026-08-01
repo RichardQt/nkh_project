@@ -11,6 +11,9 @@ Upstream (B) events of interest:
 Downstream (A -> frontend) events:
   - meta, node_start, node_end, clarify, token, related_entries, done, error
   - achievement_eval extras: optimized_query, section_stream, progress, web_search, score
+  - policy_recommend extras: optimized_query, section_stream, policy_match
+  - research_direction extras: keywords, section_stream, progress, web_search,
+    related_entries, recommended_expert, research_directions
 """
 
 from __future__ import annotations
@@ -175,6 +178,7 @@ def _has_related_items(function: str | None, payload: dict[str, Any]) -> bool:
         "enterprises",
         "platforms",
         "policies",
+        "policy_qa",
         "items",
         "entries",
         "list",
@@ -347,10 +351,14 @@ async def stream_from_backend_b(
                             "event: section_stream"
                         ):
                             emitted_token = True
-                        elif frame.startswith("event: score") or frame.startswith(
-                            "event: web_search"
+                        elif (
+                            frame.startswith("event: score")
+                            or frame.startswith("event: web_search")
+                            or frame.startswith("event: research_directions")
+                            or frame.startswith("event: recommended_expert")
+                            or frame.startswith("event: keywords")
                         ):
-                            # Structured eval / search hits count as usable content
+                            # Structured eval / search / research hits count as usable content
                             emitted_entries = True
                         elif frame.startswith("event: node_end"):
                             payload = _parse_json_object(raw_data) or {}
@@ -463,6 +471,8 @@ async def _handle_upstream_event(
     function: str | None,
 ) -> AsyncIterator[str]:
     """Map one upstream SSE event to zero or more downstream frames."""
+    import sys
+    print(f"[proxy_stream] upstream event={event_name!r} data_preview={raw_data[:120]!r}", file=sys.stderr, flush=True)
 
     name = (event_name or "message").strip().lower()
 
@@ -568,17 +578,18 @@ async def _handle_upstream_event(
         yield sse("progress", {"message": message.strip()})
         return
 
-    # achievement_eval: web search hit (title / brief / URL)
+    # achievement_eval / research_direction: web search hit (title / brief / URL)
+    # Empty URL is still forwarded so the frontend can always render the row.
     if name in ("web_search", "websearch"):
         parsed = _parse_json_object(raw_data)
         if not parsed:
             return
         title = parsed.get("title")
-        brief = parsed.get("brief")
         if not isinstance(title, str) or not title.strip():
             return
-        if not isinstance(brief, str) or not brief.strip():
-            return
+        brief = parsed.get("brief")
+        if not isinstance(brief, str):
+            brief = ""
         url = parsed.get("URL")
         if not isinstance(url, str):
             url = parsed.get("url")
@@ -600,6 +611,63 @@ async def _handle_upstream_event(
         if not parsed:
             return
         yield sse("score", parsed)
+        return
+
+    # policy_recommend: province/city fully|inadequate match lists
+    if name in ("policy_match", "policymatch"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        yield sse("policy_match", parsed)
+        return
+
+    # research_direction: standalone keyword list
+    if name in ("keywords", "keyword"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        yield sse("keywords", parsed)
+        return
+
+    # research_direction: expert recommend reason
+    if name in ("recommended_expert", "recommendedexpert"):
+        parsed = _parse_json_object(raw_data)
+        if not parsed:
+            return
+        yield sse("recommended_expert", parsed)
+        return
+
+    # research_direction: potential demand direction pillars
+    if name in ("research_directions", "researchdirections"):
+        parsed = _parse_json_object(raw_data)
+        # Allow bare array: [{"title": "...", "reason": "..."}]
+        if parsed is None:
+            try:
+                maybe_list = json.loads(raw_data) if raw_data else None
+            except json.JSONDecodeError:
+                maybe_list = None
+            if isinstance(maybe_list, list) and maybe_list:
+                parsed = {"directions": maybe_list}
+        if not parsed:
+            return
+        # Unwrap common gateway envelopes → always {directions: [...]}
+        for wrap_key in ("data", "result", "payload", "body"):
+            nested = parsed.get(wrap_key)
+            if isinstance(nested, list) and nested:
+                parsed = {"directions": nested}
+                break
+            if isinstance(nested, dict):
+                if isinstance(nested.get("directions"), list):
+                    parsed = nested
+                    break
+                if isinstance(nested.get("items"), list):
+                    parsed = {"directions": nested["items"]}
+                    break
+        if isinstance(parsed.get("items"), list) and not isinstance(
+            parsed.get("directions"), list
+        ):
+            parsed = {**parsed, "directions": parsed["items"]}
+        yield sse("research_directions", parsed)
         return
 
     if name in ("related_entries", "related", "business", "entries"):

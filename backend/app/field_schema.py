@@ -289,7 +289,7 @@ AGENT_FUNCTION_MAP: dict[str, str] = {
     "demand_discover": "requirements",
     "enterprise_discover": "enterprises",
     "platform_discover": "platforms",
-    "policy_recommend": "policies",
+    "policy_recommend": "policy_qa",
     "achievement_eval": "achievement_eval",
     "research_direction": "research_direction",
 }
@@ -298,10 +298,13 @@ AGENT_FUNCTION_MAP: dict[str, str] = {
 _FUNCTION_LIST_ALIASES: dict[str, tuple[str, ...]] = {
     "achievements": ("achievements", "items", "entries", "list"),
     "expert_team": ("expert_team", "experts", "items", "entries", "list"),
+    # research_direction surfaces expert_team lists from Backend B
+    "research_direction": ("expert_team", "experts", "items", "entries", "list"),
     "requirements": ("requirements", "demands", "items", "entries", "list"),
     "enterprises": ("enterprises", "items", "entries", "list"),
     "platforms": ("platforms", "items", "entries", "list"),
     "policies": ("policies", "items", "entries", "list"),
+    "policy_qa": ("policies", "policy_qa", "items", "entries", "list"),
 }
 
 # function → (primary list key, list fields, detail fields, env override, default list keys)
@@ -323,6 +326,14 @@ _FUNCTION_SCHEMA: dict[
         DEFAULT_ACHIEVEMENT_KEYS,
     ),
     "expert_team": (
+        "expert_team",
+        EXPERT_LIST_FIELDS,
+        EXPERT_DETAIL_FIELDS,
+        EXPERT_DISPLAY_FIELDS_RAW or None,
+        DEFAULT_EXPERT_KEYS,
+    ),
+    # research_direction related_entries uses expert_team rows
+    "research_direction": (
         "expert_team",
         EXPERT_LIST_FIELDS,
         EXPERT_DETAIL_FIELDS,
@@ -351,6 +362,13 @@ _FUNCTION_SCHEMA: dict[
         DEFAULT_PLATFORM_KEYS,
     ),
     "policies": (
+        "policies",
+        POLICY_LIST_FIELDS,
+        POLICY_DETAIL_FIELDS,
+        POLICY_DISPLAY_FIELDS_RAW or None,
+        DEFAULT_POLICY_KEYS,
+    ),
+    "policy_qa": (
         "policies",
         POLICY_LIST_FIELDS,
         POLICY_DETAIL_FIELDS,
@@ -448,7 +466,9 @@ def _function_from_category(raw: Any) -> str | None:
         "enterprise": "enterprises",
         "policies": "policies",
         "policy": "policies",
-        "policy_recommend": "policies",
+        "policy_recommend": "policy_qa",
+        "policy_qa": "policy_qa",
+        "policyqa": "policy_qa",
         "platforms": "platforms",
         "platform": "platforms",
         # 场景型（非 xx 发现列表）
@@ -461,6 +481,7 @@ def _function_from_category(raw: Any) -> str | None:
         if mapped in _FUNCTION_SCHEMA or mapped in {
             "achievement_eval",
             "research_direction",
+            "policy_qa",
         }:
             return mapped
     if token in _FUNCTION_SCHEMA:
@@ -521,6 +542,7 @@ def infer_function_from_payload(payload: dict[str, Any]) -> str | None:
         ("expert_team", ("expert_team", "experts")),
         ("requirements", ("requirements", "demands")),
         ("enterprises", ("enterprises",)),
+        ("policy_qa", ("policies", "policy_qa")),
         ("policies", ("policies",)),
         ("platforms", ("platforms",)),
     )
