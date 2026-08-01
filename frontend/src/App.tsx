@@ -16,6 +16,9 @@ const ChatPage = lazy(() => import('./pages/ChatPage/ChatPage'));
 const KnowledgeGraphPage = lazy(
   () => import('./pages/KnowledgeGraphPage/KnowledgeGraphPage'),
 );
+const UserPersonaPage = lazy(
+  () => import('./pages/UserPersonaPage/UserPersonaPage'),
+);
 const KnowledgeBasePage = lazy(
   () => import('./pages/KnowledgeBasePage/KnowledgeBasePage'),
 );
@@ -106,6 +109,14 @@ export default function App() {
             element={
               <PageBoundary>
                 <KnowledgeGraphPage />
+              </PageBoundary>
+            }
+          />
+          <Route
+            path="user-persona"
+            element={
+              <PageBoundary>
+                <UserPersonaPage />
               </PageBoundary>
             }
           />

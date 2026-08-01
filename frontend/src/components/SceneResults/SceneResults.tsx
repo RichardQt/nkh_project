@@ -618,115 +618,117 @@ function ResearchDirectionPanel({
   const showCaretOnOutlook = Boolean(streaming) && Boolean(view.outlook);
 
   return (
-    <div className={styles.panel}>
-      <section className={styles.section} aria-label="专家展示">
-        <div className={styles.sectionHead}>
-          <Typography.Text className={styles.sectionTitle}>
-            一、专家展示
-          </Typography.Text>
-        </div>
-        {expertsSlot}
-        {result.recommendReason?.trim() ? (
-          <div className={styles.recommendReasonCard}>
-            <Typography.Text className={styles.summaryLayerLabel}>
-              推荐理由
-            </Typography.Text>
-            <MarkdownContent
-              content={result.recommendReason}
-              className={styles.summaryText}
-            />
-          </div>
-        ) : null}
-      </section>
+		<div className={styles.panel}>
+			<section className={styles.section} aria-label="专家展示">
+				<div className={styles.sectionHead}>
+					<Typography.Text className={styles.sectionTitle}>
+						一、专家展示
+					</Typography.Text>
+				</div>
+				{expertsSlot}
+				{result.recommendReason?.trim() ? (
+					<div className={styles.recommendReasonCard}>
+						<Typography.Text className={styles.summaryLayerLabel}>
+							推荐理由
+						</Typography.Text>
+						<MarkdownContent
+							content={result.recommendReason}
+							className={styles.summaryText}
+						/>
+					</div>
+				) : null}
+			</section>
 
-      {showSummary ? (
-        <section className={styles.summaryStack} aria-label="研发方向总结">
-          <div className={styles.sectionHead}>
-            <Typography.Text className={styles.sectionTitle}>
-              二、研发方向总结
-              {streaming ? (
-                <span className={styles.streamingHint}>生成中</span>
-              ) : null}
-            </Typography.Text>
-          </div>
+			{showSummary ? (
+				<section className={styles.summaryStack} aria-label="研发方向总结">
+					<div className={styles.sectionHead}>
+						<Typography.Text className={styles.sectionTitle}>
+							二、企业潜在需求
+							{streaming ? (
+								<span className={styles.streamingHint}>生成中</span>
+							) : null}
+						</Typography.Text>
+					</div>
 
-          {!hasSummary ? (
-            <div className={styles.summaryCard}>
-              <Typography.Paragraph className={styles.summaryText}>
-                正在生成…
-                <span className={styles.typingCaret} aria-hidden="true" />
-              </Typography.Paragraph>
-            </div>
-          ) : (
-            <div className={styles.summaryLayers}>
-              {view.lead ? (
-                <div className={styles.summaryLeadCard}>
-                  <Typography.Text className={styles.summaryLayerLabel}>
-                    总体判断
-                  </Typography.Text>
-                  <Typography.Paragraph className={styles.summaryText}>
-                    {view.lead}
-                    {showCaretOnLead ? (
-                      <span className={styles.typingCaret} aria-hidden="true" />
-                    ) : null}
-                  </Typography.Paragraph>
-                </div>
-              ) : null}
+					{!hasSummary ? (
+						<div className={styles.summaryCard}>
+							<Typography.Paragraph className={styles.summaryText}>
+								正在生成…
+								<span className={styles.typingCaret} aria-hidden="true" />
+							</Typography.Paragraph>
+						</div>
+					) : (
+						<div className={styles.summaryLayers}>
+							{view.lead ? (
+								<div className={styles.summaryLeadCard}>
+									<Typography.Text className={styles.summaryLayerLabel}>
+										企业潜在需求总结
+									</Typography.Text>
+									<Typography.Paragraph className={styles.summaryText}>
+										{view.lead}
+										{showCaretOnLead ? (
+											<span className={styles.typingCaret} aria-hidden="true" />
+										) : null}
+									</Typography.Paragraph>
+								</div>
+							) : null}
 
-              {view.pillars.length > 0 ? (
-                <div className={styles.summaryPillarList}>
-                  <Typography.Text className={styles.summaryLayerLabel}>
-                    重点方向
-                  </Typography.Text>
-                  {view.pillars.map((item, index) => {
-                    const isLast = index === view.pillars.length - 1;
-                    return (
-                      <article
-                        key={item.title}
-                        className={styles.summaryPillarCard}
-                      >
-                        <div className={styles.summaryPillarHead}>
-                          <span className={styles.summaryPillarIndex}>
-                            {String(index + 1).padStart(2, '0')}
-                          </span>
-                          <Typography.Text className={styles.summaryPillarTitle}>
-                            {item.title}
-                          </Typography.Text>
-                        </div>
-                        <Typography.Paragraph className={styles.summaryText}>
-                          {item.body}
-                          {showCaretOnLastPillar && isLast ? (
-                            <span
-                              className={styles.typingCaret}
-                              aria-hidden="true"
-                            />
-                          ) : null}
-                        </Typography.Paragraph>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : null}
+							{view.pillars.length > 0 ? (
+								<div className={styles.summaryPillarList}>
+									<Typography.Text className={styles.summaryLayerLabel}>
+										潜在需求方向
+									</Typography.Text>
+									{view.pillars.map((item, index) => {
+										const isLast = index === view.pillars.length - 1;
+										return (
+											<article
+												key={item.title}
+												className={styles.summaryPillarCard}
+											>
+												<div className={styles.summaryPillarHead}>
+													<span className={styles.summaryPillarIndex}>
+														{String(index + 1).padStart(2, "0")}
+													</span>
+													<Typography.Text
+														className={styles.summaryPillarTitle}
+													>
+														{item.title}
+													</Typography.Text>
+												</div>
+												<Typography.Paragraph className={styles.summaryText}>
+													{item.body}
+													{showCaretOnLastPillar && isLast ? (
+														<span
+															className={styles.typingCaret}
+															aria-hidden="true"
+														/>
+													) : null}
+												</Typography.Paragraph>
+											</article>
+										);
+									})}
+								</div>
+							) : null}
 
-              {view.outlook ? (
-                <div className={styles.summaryOutlookCard}>
-                  <Typography.Text className={styles.summaryLayerLabel}>
-                    综合研判
-                  </Typography.Text>
-                  <Typography.Paragraph className={styles.summaryText}>
-                    {view.outlook}
-                    {showCaretOnOutlook ? (
-                      <span className={styles.typingCaret} aria-hidden="true" />
-                    ) : null}
-                  </Typography.Paragraph>
-                </div>
-              ) : null}
-            </div>
-          )}
-        </section>
-      ) : null}
-    </div>
-  );
+							{view.outlook ? (
+								<div className={styles.summaryOutlookCard}>
+									<Typography.Text className={styles.summaryLayerLabel}>
+										综合研判
+									</Typography.Text>
+									<Typography.Paragraph className={styles.summaryText}>
+										{view.outlook}
+										{showCaretOnOutlook ? (
+											<span className={styles.typingCaret} aria-hidden="true" />
+										) : null}
+									</Typography.Paragraph>
+								</div>
+							) : null}
+						</div>
+					)}
+				</section>
+			) : null}
+		</div>
+	);
 }
 
 

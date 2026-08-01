@@ -4,6 +4,7 @@ import {
   AppstoreOutlined,
   ArrowLeftOutlined,
   DatabaseOutlined,
+  IdcardOutlined,
   LogoutOutlined,
   MenuOutlined,
   RobotOutlined,
@@ -59,6 +60,9 @@ function SidebarPanel({
   const kgActive =
     activePath === '/knowledge-graph' ||
     activePath.startsWith('/knowledge-graph/');
+  const personaActive =
+    activePath === '/user-persona' ||
+    activePath.startsWith('/user-persona/');
   const kbActive =
     activePath === '/knowledge-base' ||
     activePath.startsWith('/knowledge-base/');
@@ -136,6 +140,18 @@ function SidebarPanel({
           aria-current={kgActive ? 'page' : undefined}
         >
           知识图谱
+        </Button>
+
+        <Button
+          type="default"
+          icon={<IdcardOutlined />}
+          size="large"
+          block
+          className={`${styles.navEntryButton} ${personaActive ? styles.navEntryButtonActive : ''}`}
+          onClick={() => onNavigate('/user-persona')}
+          aria-current={personaActive ? 'page' : undefined}
+        >
+          用户画像
         </Button>
 
         {showKnowledgeBase ? (

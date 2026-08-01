@@ -1,0 +1,323 @@
+.page {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: var(--canvas);
+  background-image: url('../../../assests/bj.png');
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(100%, 880px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(28px, 5vh, 48px) 24px 40px;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.headerCopy {
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.headerActions {
+  flex: 0 0 auto;
+}
+
+.title {
+  margin: 0 !important;
+  color: var(--text) !important;
+  font-size: clamp(22px, 2.2vw, 28px) !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.2 !important;
+}
+
+.subtitle {
+  max-width: 40rem;
+  margin: 8px 0 0 !important;
+  color: var(--text-secondary) !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+
+.identityCard,
+.formCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+
+.identityCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px 20px;
+}
+
+.identityHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.identityIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: var(--primary);
+  font-size: 18px;
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+}
+
+.identityCopy {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sectionLabel {
+  color: var(--text) !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.01em;
+}
+
+.identityHint {
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.roleTag {
+  margin: 0 !important;
+  border-radius: 999px !important;
+  font-weight: 600;
+}
+
+.roleFormItem {
+  margin-bottom: 0 !important;
+}
+
+.roleSegmented {
+  width: 100%;
+}
+
+.roleSegmented :global(.ant-segmented-item-label) {
+  min-height: 36px;
+  line-height: 36px;
+  font-weight: 600;
+}
+
+.roleReadonly {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.roleChip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 96px;
+  padding: 12px 14px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color 0.2s var(--ease-out),
+    background 0.2s var(--ease-out),
+    box-shadow 0.2s var(--ease-out);
+}
+
+.roleChipActive {
+  background: var(--primary-soft);
+  border-color: rgba(43, 92, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(43, 92, 255, 0.08);
+}
+
+.roleChipLabel {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.roleChipDesc {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.formCard {
+  padding: 18px 20px 14px;
+}
+
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+}
+
+.formGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.formItem {
+  margin-bottom: 16px !important;
+}
+
+.formItem :global(.ant-form-item-label) {
+  padding-bottom: 4px !important;
+}
+
+.formItem :global(.ant-form-item-label > label) {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sceneGroup {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 12px;
+  width: 100%;
+}
+
+.sceneGroup :global(.ant-checkbox-wrapper) {
+  margin-inline-start: 0 !important;
+}
+
+.readonlyGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.readonlyBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.readonlyBlock:last-of-type {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.readonlyBody {
+  margin: 0 !important;
+  color: var(--text) !important;
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.focusTag,
+.sceneTag {
+  margin: 0 !important;
+  padding: 2px 10px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+}
+
+.focusTag {
+  color: var(--primary) !important;
+  background: var(--primary-soft) !important;
+  border-color: transparent !important;
+}
+
+.sceneTag {
+  color: var(--text) !important;
+  background: var(--surface-muted) !important;
+  border-color: var(--border) !important;
+}
+
+.inlineEmpty {
+  margin: 4px 0 0 !important;
+  padding: 8px 0 !important;
+}
+
+.inlineEmpty :global(.ant-empty-image) {
+  height: 36px !important;
+  margin-bottom: 4px !important;
+}
+
+.inlineEmpty :global(.ant-empty-description) {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.metaText {
+  font-size: 12px !important;
+}
+
+@media (max-width: 768px) {
+  .stage {
+    padding: 20px 16px 32px;
+  }
+
+  .roleReadonly {
+    grid-template-columns: 1fr;
+  }
+
+  .sceneGroup {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roleChip {
+    transition: none;
+  }
+}

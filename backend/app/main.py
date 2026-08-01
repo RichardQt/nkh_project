@@ -97,6 +97,11 @@ from app.sensitive_word_store import (
     list_sensitive_words,
     update_sensitive_word,
 )
+from app.user_profile_store import (
+    get_user_profile,
+    init_user_profiles,
+    upsert_user_profile,
+)
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -140,6 +145,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_auth()
     init_model_config()
     init_sensitive_words()
+    init_user_profiles()
     admin = get_user_by_username("admin")
     if admin is not None:
         migrate_orphan_conversations(admin["id"])
@@ -234,6 +240,41 @@ def api_logout(request: Request) -> dict[str, Any]:
     if token:
         delete_session(token)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# User persona / memory profile (per-user SQLite)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/user/profile")
+def api_get_user_profile(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Return the current user's persona profile (empty defaults if unset)."""
+
+    return get_user_profile(user["id"])
+
+
+@app.put("/api/user/profile")
+async def api_put_user_profile(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Create or replace the current user's persona profile."""
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    try:
+        return upsert_user_profile(user["id"], body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 # ---------------------------------------------------------------------------
