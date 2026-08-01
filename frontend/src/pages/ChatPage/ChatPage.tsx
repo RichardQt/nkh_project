@@ -29,7 +29,7 @@ import type {
   BubbleListProps,
   ThoughtChainProps,
 } from '@ant-design/x';
-import { Button, Drawer, Empty, List, Modal, Spin, Typography, message } from 'antd';
+import { Button, Drawer, Empty, Form, Input, List, Modal, Spin, Typography, message } from 'antd';
 import { useReducedMotion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import HotspotBar from '../../components/HotspotBar/HotspotBar';
@@ -64,6 +64,7 @@ import {
   type SessionLogLine,
   type SessionLogsConnection,
 } from '../../services/sessionLogs';
+import { authHeaders, parseJsonResponse } from '../../services/http';
 import { startSceneMockStream } from '../../services/sceneMockStream';
 import type { AgentKey } from '../../types/agent';
 import type {
@@ -100,6 +101,29 @@ interface ChatLocationState {
   sessionId?: string;
   /** 首页选择的对话模型 */
   model?: string;
+}
+
+/** 发布成果表单字段 */
+interface PublishAchievementForm {
+  achievement_type: string;
+  technical_field: string;
+  maturity: string;
+  transaction_amount: string;
+  publisher: string;
+  brief: string;
+  summary: string;
+}
+
+/** 发布需求表单字段 */
+interface PublishRequirementForm {
+  requirement_type: string;
+  technical_field: string;
+  deadline: string;
+  budget: string;
+  publisher: string;
+  cooperation_mode: string;
+  existing_basis: string;
+  key_technologies: string;
 }
 
 interface ChatPageProps {
@@ -1996,6 +2020,16 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
   ]);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+
+  // 发布成果弹窗状态
+  const [publishAchievementOpen, setPublishAchievementOpen] = useState(false);
+  const [publishAchievementLoading, setPublishAchievementLoading] = useState(false);
+  const [publishAchievementForm] = Form.useForm<PublishAchievementForm>();
+
+  // 发布需求弹窗状态
+  const [publishRequirementOpen, setPublishRequirementOpen] = useState(false);
+  const [publishRequirementLoading, setPublishRequirementLoading] = useState(false);
+  const [publishRequirementForm] = Form.useForm<PublishRequirementForm>();
   const requestRef = useRef<ChatStreamController | null>(null);
   const bubbleListRef = useRef<ComponentRef<typeof Bubble.List>>(null);
   const activeAnswerRef = useRef<string | null>(null);
@@ -4046,13 +4080,85 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
     [displayName, feedbackById, messages, openSessionLogs, submit],
   );
 
+  /** 点击"发布成果"：调用结构化接口并弹出编辑弹窗 */
+  const handlePublishAchievement = async () => {
+    // 提取会话中所有用户问题
+    const content = messagesRef.current
+      .filter((m) => m.role === 'user' || m.kind === 'question')
+      .map((m) => m.content?.trim())
+      .filter(Boolean)
+      .join('\n');
+
+    setPublishAchievementOpen(true);
+    setPublishAchievementLoading(true);
+    publishAchievementForm.resetFields();
+
+    try {
+      const res = await fetch('/api/post_structured', {
+        method: 'POST',
+        headers: authHeaders({
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        }),
+        body: JSON.stringify({
+          content,
+          session_id: sessionIdRef.current,
+          function: 'post_achievement',
+        }),
+      });
+      const data = await parseJsonResponse<PublishAchievementForm>(res);
+      publishAchievementForm.setFieldsValue(data);
+    } catch {
+      message.error('获取成果信息失败，请稍后重试');
+      setPublishAchievementOpen(false);
+    } finally {
+      setPublishAchievementLoading(false);
+    }
+  };
+
+  /** 点击"发布需求"：调用结构化接口并弹出编辑弹窗 */
+  const handlePublishRequirement = async () => {
+    // 提取会话中所有用户问题
+    const content = messagesRef.current
+      .filter((m) => m.role === 'user' || m.kind === 'question')
+      .map((m) => m.content?.trim())
+      .filter(Boolean)
+      .join('\n');
+
+    setPublishRequirementOpen(true);
+    setPublishRequirementLoading(true);
+    publishRequirementForm.resetFields();
+
+    try {
+      const res = await fetch('/api/post_structured', {
+        method: 'POST',
+        headers: authHeaders({
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        }),
+        body: JSON.stringify({
+          content,
+          session_id: sessionIdRef.current,
+          function: 'post_requirement',
+        }),
+      });
+      const data = await parseJsonResponse<PublishRequirementForm>(res);
+      publishRequirementForm.setFieldsValue(data);
+    } catch {
+      message.error('获取需求信息失败，请稍后重试');
+      setPublishRequirementOpen(false);
+    } finally {
+      setPublishRequirementLoading(false);
+    }
+  };
+
   const publishDock = (
     <aside className={styles.sideFab} aria-label="快捷发布">
-      <button type="button" className={styles.sideFabItem}>
+      <button type="button" className={styles.sideFabItem} onClick={handlePublishAchievement}>
         <FileDoneOutlined className={styles.sideFabIcon} aria-hidden />
         <span className={styles.sideFabLabel}>发布成果</span>
       </button>
-      <button type="button" className={styles.sideFabItem}>
+      <button type="button" className={styles.sideFabItem} onClick={handlePublishRequirement}>
         <FormOutlined className={styles.sideFabIcon} aria-hidden />
         <span className={styles.sideFabLabel}>发布需求</span>
       </button>
@@ -4151,6 +4257,153 @@ export default function ChatPage({ agentKey }: ChatPageProps) {
         </footer>
       </section>
       {publishDock}
+
+      {/* 发布成果弹窗 */}
+      <Modal
+        open={publishAchievementOpen}
+        onCancel={() => setPublishAchievementOpen(false)}
+        title="发布成果"
+        centered
+        width={640}
+        destroyOnClose
+        className={styles.publishModal}
+        footer={
+          <div className={styles.publishModalFooter}>
+            <Button onClick={() => setPublishAchievementOpen(false)}>
+              稍后再试
+            </Button>
+            <Button
+              type="primary"
+              onClick={() => {
+                message.info('发布功能即将开放');
+              }}
+            >
+              一键发布
+            </Button>
+          </div>
+        }
+      >
+        {publishAchievementLoading ? (
+          <div className={styles.publishModalLoading}>
+            <Spin size="default" />
+            <Typography.Text type="secondary">正在解析成果信息…</Typography.Text>
+          </div>
+        ) : (
+          <Form
+            form={publishAchievementForm}
+            layout="horizontal"
+            labelCol={{ span: 7 }}
+            wrapperCol={{ span: 17 }}
+            className={styles.publishModalForm}
+            colon={false}
+          >
+            <div className={styles.publishFormTable}>
+              <Form.Item label="成果类型" name="achievement_type">
+                <Input placeholder="请输入成果类型" />
+              </Form.Item>
+              <Form.Item label="产业技术领域" name="technical_field">
+                <Input placeholder="请输入产业技术领域" />
+              </Form.Item>
+              <Form.Item label="成熟度" name="maturity">
+                <Input placeholder="请输入成熟度" />
+              </Form.Item>
+              <Form.Item label="交易金额" name="transaction_amount">
+                <Input placeholder="请输入交易金额" />
+              </Form.Item>
+              <Form.Item label="发布单位（人）" name="publisher">
+                <Input placeholder="请输入发布单位或姓名" />
+              </Form.Item>
+              <Form.Item label="成果简介" name="brief">
+                <Input.TextArea
+                  placeholder="请输入成果简介"
+                  autoSize={{ minRows: 2, maxRows: 4 }}
+                />
+              </Form.Item>
+              <Form.Item label="成果综述" name="summary">
+                <Input.TextArea
+                  placeholder="请输入成果综述"
+                  autoSize={{ minRows: 3, maxRows: 6 }}
+                />
+              </Form.Item>
+            </div>
+          </Form>
+        )}
+      </Modal>
+
+      {/* 发布需求弹窗 */}
+      <Modal
+        open={publishRequirementOpen}
+        onCancel={() => setPublishRequirementOpen(false)}
+        title="发布需求"
+        centered
+        width={640}
+        destroyOnClose
+        className={styles.publishModal}
+        footer={
+          <div className={styles.publishModalFooter}>
+            <Button onClick={() => setPublishRequirementOpen(false)}>
+              稍后再试
+            </Button>
+            <Button
+              type="primary"
+              onClick={() => {
+                message.info('发布功能即将开放');
+              }}
+            >
+              一键发布
+            </Button>
+          </div>
+        }
+      >
+        {publishRequirementLoading ? (
+          <div className={styles.publishModalLoading}>
+            <Spin size="default" />
+            <Typography.Text type="secondary">正在解析需求信息…</Typography.Text>
+          </div>
+        ) : (
+          <Form
+            form={publishRequirementForm}
+            layout="horizontal"
+            labelCol={{ span: 7 }}
+            wrapperCol={{ span: 17 }}
+            className={styles.publishModalForm}
+            colon={false}
+          >
+            <div className={styles.publishFormTable}>
+              <Form.Item label="需求类型" name="requirement_type">
+                <Input placeholder="请输入需求类型" />
+              </Form.Item>
+              <Form.Item label="产业技术领域" name="technical_field">
+                <Input placeholder="请输入产业技术领域" />
+              </Form.Item>
+              <Form.Item label="截止日期" name="deadline">
+                <Input placeholder="请输入截止日期" />
+              </Form.Item>
+              <Form.Item label="意向投入金额" name="budget">
+                <Input placeholder="请输入意向投入金额" />
+              </Form.Item>
+              <Form.Item label="发布单位（人）" name="publisher">
+                <Input placeholder="请输入发布单位或姓名" />
+              </Form.Item>
+              <Form.Item label="合作方式" name="cooperation_mode">
+                <Input placeholder="请输入合作方式" />
+              </Form.Item>
+              <Form.Item label="现有基础" name="existing_basis">
+                <Input.TextArea
+                  placeholder="请输入现有基础"
+                  autoSize={{ minRows: 2, maxRows: 4 }}
+                />
+              </Form.Item>
+              <Form.Item label="主要技术" name="key_technologies">
+                <Input.TextArea
+                  placeholder="请输入希望解决的主要技术"
+                  autoSize={{ minRows: 2, maxRows: 4 }}
+                />
+              </Form.Item>
+            </div>
+          </Form>
+        )}
+      </Modal>
 
       <Drawer
         open={logsOpen}

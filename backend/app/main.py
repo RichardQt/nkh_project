@@ -180,6 +180,7 @@ _SSE_HEADERS = {
 }
 
 _KG_QUERY_PATH = "/api/kg/query"
+_POST_STRUCTURED_PATH = "/api/post_structured"
 
 
 @app.get("/api/health")
@@ -530,6 +531,76 @@ async def kg_query(
 
     content_type = upstream.headers.get("content-type", "application/json")
     # Prefer JSON passthrough so Chinese stays intact
+    try:
+        data = upstream.json()
+        return JSONResponse(content=data, status_code=upstream.status_code)
+    except (json.JSONDecodeError, ValueError):
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            media_type=content_type,
+        )
+
+
+@app.post("/api/post_structured")
+async def post_structured(
+    request: Request,
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    """Proxy structured publish form extraction to Backend B.
+
+    Frontend body::
+
+        {
+          "content": "用户会话问题拼接文本",
+          "session_id": "uuid",
+          "function": "post_achievement" | "post_requirement"
+        }
+    """
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="请求体必须是有效的 JSON") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+
+    content = body.get("content")
+    session_id = body.get("session_id")
+    function = body.get("function")
+
+    if not isinstance(content, str):
+        raise HTTPException(status_code=422, detail="content 必须是字符串")
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise HTTPException(status_code=422, detail="session_id 不能为空")
+    if not isinstance(function, str) or not function.strip():
+        raise HTTPException(status_code=422, detail="function 不能为空")
+
+    payload = {
+        "content": content,
+        "session_id": session_id.strip(),
+        "function": function.strip(),
+    }
+
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if BACKEND_B_API_KEY:
+        headers["Authorization"] = f"Bearer {BACKEND_B_API_KEY}"
+
+    url = f"{BACKEND_B_BASE_URL.rstrip('/')}{_POST_STRUCTURED_PATH}"
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+            upstream = await client.post(url, json=payload, headers=headers)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="结构化解析服务超时") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="结构化解析服务不可用") from exc
+
+    content_type = upstream.headers.get("content-type", "application/json")
     try:
         data = upstream.json()
         return JSONResponse(content=data, status_code=upstream.status_code)
