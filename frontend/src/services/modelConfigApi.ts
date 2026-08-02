@@ -3,6 +3,7 @@ import { authHeaders, parseJsonResponse } from './http';
 export type ModelConfigKind = 'llm' | 'llm2' | 'embedding' | 'rerank';
 
 export interface LlmConfig {
+  channelName: string;
   baseUrl: string;
   authorization: string;
   aiApiCode: string;
@@ -64,6 +65,7 @@ function normalizeLlm(raw: unknown): LlmConfig {
   const record =
     raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return {
+    channelName: asString(record.channelName),
     baseUrl: asString(record.baseUrl),
     authorization: asString(record.authorization),
     aiApiCode: asString(record.aiApiCode),

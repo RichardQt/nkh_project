@@ -93,13 +93,17 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  /*
+    Respect the OS preference for gentle motion but do NOT suppress
+    antd's rc-motion timers (animation-duration / transition-duration).
+    Doing so stalls popup entrance state machines on Windows Server / RDP,
+    leaving Select dropdowns, Modals, Drawers, etc. invisible / frozen.
+    Let antd animations run at their normal built-in speed — the user
+    needs a functioning UI more than sub-200 ms motion suppression.
+  */
+
+  html {
     scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 
   /* Keep chat thought-chain loading feedback visible on locked-down desktops. */

@@ -17,6 +17,7 @@ _INITIALIZED = False
 _CONFIG_ID = "default"
 
 _DEFAULT_LLM: dict[str, Any] = {
+    "channelName": "大语言模型配置1",
     "baseUrl": "http://njmaas.njdashuju.cn:9080/v1",
     "authorization": "zk283VDdxF.4q94mt3KEH",
     "aiApiCode": "UXdlbjMuNi0zNUItY2VzaGlfMV9sbG0",
@@ -27,6 +28,7 @@ _DEFAULT_LLM: dict[str, Any] = {
 }
 
 _DEFAULT_LLM2: dict[str, Any] = {
+    "channelName": "大语言模型配置2",
     "baseUrl": "http://njmaas.njdashuju.cn:9080/v1",
     "authorization": "zk283VDdxF.4q94mt3KEH",
     "aiApiCode": "UXdlbjMuNi0zNUItY2VzaGlfMV9sbG0",
@@ -172,6 +174,9 @@ def _merge_section(
         merged["aiApiCode"] = incoming["aiApiCode"].strip()
 
     if kind in ("llm", "llm2"):
+        if "channelName" in incoming and isinstance(incoming["channelName"], str):
+            name = incoming["channelName"].strip()
+            merged["channelName"] = name or str(defaults.get("channelName", ""))
         if "temperature" in incoming:
             try:
                 temp = float(incoming["temperature"])
@@ -290,8 +295,8 @@ async def test_model_config(kind: str) -> dict[str, Any]:
         }
 
     labels = {
-        "llm": "大语言模型配置1",
-        "llm2": "大语言模型配置2",
+        "llm": str(section.get("channelName") or "").strip() or "大语言模型配置1",
+        "llm2": str(section.get("channelName") or "").strip() or "大语言模型配置2",
         "embedding": "Embedding 模型",
         "rerank": "Rerank 模型",
     }

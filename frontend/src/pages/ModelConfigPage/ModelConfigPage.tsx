@@ -31,6 +31,7 @@ import {
 import styles from './ModelConfigPage.module.css';
 
 type LlmFormValues = {
+  channelName: string;
   baseUrl: string;
   authorization: string;
   aiApiCode: string;
@@ -54,16 +55,19 @@ type NavItem = {
   icon: typeof ApiOutlined;
 };
 
+const DEFAULT_LLM_LABEL = '大语言模型配置1';
+const DEFAULT_LLM2_LABEL = '大语言模型配置2';
+
 const NAV_ITEMS: NavItem[] = [
   {
     key: 'llm',
-    label: '大语言模型配置1',
+    label: DEFAULT_LLM_LABEL,
     meta: 'OpenAI 兼容 /chat/completions',
     icon: ApiOutlined,
   },
   {
     key: 'llm2',
-    label: '大语言模型配置2',
+    label: DEFAULT_LLM2_LABEL,
     meta: 'OpenAI 兼容 /chat/completions',
     icon: ApiOutlined,
   },
@@ -81,8 +85,20 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+function resolveLlmLabel(
+  snapshot: ModelConfig | null,
+  key: 'llm' | 'llm2',
+): string {
+  const fallback = key === 'llm' ? DEFAULT_LLM_LABEL : DEFAULT_LLM2_LABEL;
+  if (!snapshot) return fallback;
+  const name =
+    key === 'llm' ? snapshot.llm.channelName : snapshot.llm2.channelName;
+  return name.trim() || fallback;
+}
+
 function toLlmForm(llm: LlmConfig): LlmFormValues {
   return {
+    channelName: llm.channelName || '',
     baseUrl: llm.baseUrl,
     authorization: llm.authorization || '',
     aiApiCode: llm.aiApiCode || '',
@@ -112,6 +128,7 @@ function buildSavePayload(
   return {
     llm: {
       ...snapshot.llm,
+      channelName: llmValues.channelName?.trim() ?? '',
       baseUrl: llmValues.baseUrl?.trim() ?? '',
       authorization: llmValues.authorization ?? '',
       aiApiCode: llmValues.aiApiCode ?? '',
@@ -122,6 +139,7 @@ function buildSavePayload(
     },
     llm2: {
       ...snapshot.llm2,
+      channelName: llm2Values.channelName?.trim() ?? '',
       baseUrl: llm2Values.baseUrl?.trim() ?? '',
       authorization: llm2Values.authorization ?? '',
       aiApiCode: llm2Values.aiApiCode ?? '',
@@ -278,12 +296,23 @@ export default function ModelConfigPage() {
 
   const activeNav = NAV_ITEMS.find((item) => item.key === activeKey) ?? NAV_ITEMS[0];
   const ActiveIcon = activeNav.icon;
+  const activeLabel =
+    activeKey === 'llm' || activeKey === 'llm2'
+      ? resolveLlmLabel(snapshot, activeKey)
+      : activeNav.label;
 
   const renderLlmForm = (
     form: ReturnType<typeof Form.useForm<LlmFormValues>>[0],
-    modelPlaceholder: string,
+    opts: { modelPlaceholder: string; channelDefault: string },
   ) => (
     <Form form={form} layout="vertical" className={styles.form} requiredMark={false}>
+      <Form.Item
+        label="渠道名称"
+        name="channelName"
+        rules={[{ max: 30, message: '渠道名称最多 30 个字符' }]}
+      >
+        <Input placeholder={opts.channelDefault} allowClear maxLength={30} />
+      </Form.Item>
       <Form.Item
         label="服务地址"
         name="baseUrl"
@@ -302,7 +331,7 @@ export default function ModelConfigPage() {
         name="model"
         rules={[{ required: true, message: '请输入模型名称' }]}
       >
-        <Input placeholder={modelPlaceholder} allowClear />
+        <Input placeholder={opts.modelPlaceholder} allowClear />
       </Form.Item>
       <div className={`${styles.formRow} ${styles.formRowTwo}`}>
         <Form.Item label="温度 temperature" name="temperature">
@@ -387,6 +416,10 @@ export default function ModelConfigPage() {
                 {NAV_ITEMS.map((item) => {
                   const Icon = item.icon;
                   const active = item.key === activeKey;
+                  const label =
+                    item.key === 'llm' || item.key === 'llm2'
+                      ? resolveLlmLabel(snapshot, item.key)
+                      : item.label;
                   return (
                     <button
                       key={item.key}
@@ -397,7 +430,7 @@ export default function ModelConfigPage() {
                     >
                       <span className={styles.navItemLabel}>
                         <Icon className={styles.navItemIcon} />
-                        {item.label}
+                        {label}
                       </span>
                       <span className={styles.navItemMeta}>{item.meta}</span>
                     </button>
@@ -405,22 +438,28 @@ export default function ModelConfigPage() {
                 })}
               </nav>
 
-              <section className={styles.panel} aria-label={activeNav.label}>
+              <section className={styles.panel} aria-label={activeLabel}>
                 <div className={styles.panelHead}>
                   <div className={styles.panelTitleBlock}>
                     <div className={styles.panelTitle}>
                       <ActiveIcon className={styles.panelIcon} />
-                      {activeNav.label}
+                      {activeLabel}
                     </div>
                     <div className={styles.panelMeta}>{activeNav.meta}</div>
                   </div>
                 </div>
                 <div className={styles.panelBody}>
                   <div hidden={activeKey !== 'llm'}>
-                    {renderLlmForm(llmForm, 'Qwen3.6-35B-A3B')}
+                    {renderLlmForm(llmForm, {
+                      modelPlaceholder: 'Qwen3.6-35B-A3B',
+                      channelDefault: DEFAULT_LLM_LABEL,
+                    })}
                   </div>
                   <div hidden={activeKey !== 'llm2'}>
-                    {renderLlmForm(llm2Form, 'Qwen3.6-35B-A3B')}
+                    {renderLlmForm(llm2Form, {
+                      modelPlaceholder: 'Qwen3.6-35B-A3B',
+                      channelDefault: DEFAULT_LLM2_LABEL,
+                    })}
                   </div>
                   <div hidden={activeKey !== 'embedding'}>
                     {renderSimpleForm(embForm, {
